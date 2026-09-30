@@ -26,13 +26,16 @@ private fun download(dest: File, only: Set<String>, onProgress: (Float) -> Unit)
         val licenses = try { s.licenses.get(60, TimeUnit.SECONDS) } catch (e: Exception) { die("Steam did not send the account's licenses: $e") }
         val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         // Tests run the downloader in debug mode so a hang shows where it stopped.
-        val (downloads, decompressors) = concurrencyFor(Runtime.getRuntime().maxMemory())
+        val (downloads, decompressors) = concurrencyFor(Runtime.getRuntime().maxMemory(), Runtime.getRuntime().availableProcessors())
         log("download concurrency: $downloads requests, $decompressors decompressors")
-        DepotDownloader(s.client, licenses, only.isNotEmpty(), false, downloads, decompressors, 4).use { dd ->
+        DepotDownloader(s.client, licenses, only.isNotEmpty(), false, downloads, decompressors, ioThreadsFor(Runtime.getRuntime().maxMemory()) / 2).use { dd ->
             dd.addListener(object : IDownloadListener {
                 override fun onStatusUpdate(message: String) = log(message)
                 override fun onChunkCompleted(depotId: Int, depotPercentComplete: Float, compressedBytes: Long, uncompressedBytes: Long) =
                     onProgress(depotPercentComplete * 100) // JavaSteam reports 0..1 despite the name
+                // A file's last chunk reports here instead, so single-chunk files only ever show up here.
+                override fun onFileCompleted(depotId: Int, fileName: String, depotPercentComplete: Float) =
+                    onProgress(depotPercentComplete * 100)
                 override fun onDownloadFailed(item: DownloadItem, error: Throwable) { failure.set(error) }
             })
             if (only.isNotEmpty()) restrictToFiles(dd, only)
@@ -60,11 +63,13 @@ private fun restrictToFiles(dd: DepotDownloader, files: Set<String>) {
 }
 
 /**
- * Requests in flight (also the IO thread cap) and decompressors, sized to the heap the OS grants (Android
- * scales it with device RAM). Each IO thread that decompresses keeps an 8 MB LZMA window, so requests are
- * capped at heap/32 MB: those windows stay within a quarter of the heap.
+ * Requests in flight and decompressors, sized to the heap the OS grants (Android scales it with RAM). A
+ * request, and each stage queue after it, holds a chunk of up to 1 MB, so heap/16; decompression gets every core.
  */
-internal fun concurrencyFor(maxHeapBytes: Long): Pair<Int, Int> {
+internal fun concurrencyFor(maxHeapBytes: Long, cores: Int = 1): Pair<Int, Int> {
     val mb = (maxHeapBytes / (1 shl 20)).toInt()
-    return (mb / 32).coerceIn(4, 16) to (mb / 192).coerceIn(1, 2)
+    return (mb / 16).coerceIn(8, 32) to cores.coerceIn(1, (mb / 32).coerceIn(2, 16))
 }
+
+/** Each thread that decompresses keeps an 8 MB LZMA window, so IO threads stay within a quarter of the heap. */
+internal fun ioThreadsFor(maxHeapBytes: Long) = (maxHeapBytes / (1 shl 20) / 32).toInt().coerceIn(4, 16)

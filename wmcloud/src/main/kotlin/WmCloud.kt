@@ -5,16 +5,31 @@ import com.google.zxing.qrcode.encoder.Encoder
 import java.io.File
 import java.util.function.Consumer
 
+/** Bundled BouncyCastle with chunk AES moved to Android's native OpenSSL: pure-Java AES was ~10% of download CPU. */
+private fun steamCrypto(): java.security.Provider {
+    val bc = org.bouncycastle.jce.provider.BouncyCastleProvider()
+    val native = java.security.Security.getProvider("AndroidOpenSSL") ?: return bc
+    // putService is protected; BC is final, so it cannot be subclassed. Service entries win over BC's own.
+    val put = java.security.Provider::class.java.getDeclaredMethod("putService", java.security.Provider.Service::class.java).apply { isAccessible = true }
+    for ((ours, theirs) in listOf("AES/ECB/NoPadding" to "AES/ECB/NoPadding", "AES/CBC/PKCS7Padding" to "AES/CBC/PKCS5Padding")) {
+        val target = native.getService("Cipher", theirs) ?: continue
+        put.invoke(bc, object : java.security.Provider.Service(bc, "Cipher", ours, target.className, null, null) {
+            override fun newInstance(param: Any?) = target.newInstance(param)
+        })
+    }
+    return bc
+}
+
 /** The sync operations for Java callers (the Android app), with checked exceptions declared. */
 object WmCloud {
     @JvmStatic fun configure(dir: File, logger: Consumer<String>) {
         // JavaSteam keeps an 8 MB LZMA window per thread that decompresses a chunk, and chunks decompress
         // on Dispatchers.IO, which grows to 64 threads: 512 MB. Must be set before Dispatchers.IO is first used.
-        System.setProperty("kotlinx.coroutines.io.parallelism", concurrencyFor(Runtime.getRuntime().maxMemory()).first.toString())
+        System.setProperty("kotlinx.coroutines.io.parallelism", ioThreadsFor(Runtime.getRuntime().maxMemory()).toString())
         // Android registers its own cut-down provider as "BC" (no SHA-1 among others); JavaSteam asks
         // for "BC" by name, so put the full bundled BouncyCastle in its place.
         java.security.Security.removeProvider("BC")
-        java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), 1)
+        java.security.Security.insertProviderAt(steamCrypto(), 1)
         configDir = dir
         log = { logger.accept(it) }
     }

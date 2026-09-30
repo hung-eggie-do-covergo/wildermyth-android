@@ -107,9 +107,23 @@ fun printQr(text: String) {
 fun loadState(): State = readPrivate("state.json")?.let { gson.fromJson(it, State::class.java) } ?: State()
 fun saveState(s: State) = writePrivate("state.json", gson.toJson(s))
 
+/**
+ * JavaSteam fetches CDN chunks with OkHttp's async calls, which OkHttp's default dispatcher limits to 5 per
+ * host; every chunk comes from one CDN host, so without this a download never had more than 5 in flight.
+ */
+fun steamConfiguration(): `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration {
+    val perHost = concurrencyFor(Runtime.getRuntime().maxMemory()).first
+    val http = OkHttpClient.Builder()
+        .dispatcher(okhttp3.Dispatcher().apply { maxRequests = 64; maxRequestsPerHost = perHost })
+        .connectionPool(okhttp3.ConnectionPool(perHost, 5, TimeUnit.MINUTES))
+        .connectTimeout(10, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+    return `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration.create { it.withHttpClient(http) }
+}
+
 /** Connects and logs on; with no token, runs the interactive QR-code flow. */
 class Session(private val interactive: Boolean, handlers: List<ClientMsgHandler> = emptyList()) : AutoCloseable {
-    val client = SteamClient()
+    val client = SteamClient(steamConfiguration())
     private val manager = CallbackManager(client)
     val cloud: SteamCloud = client.getHandler(SteamCloud::class.java)!!
     private val loggedOn = CompletableFuture<Unit>()
