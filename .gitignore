@@ -1,7 +1,6 @@
 .gradle/
 build/
 *.tar
-amethyst/
 jamepad/
 natives/
 jamepad-android/*.so
@@ -15,3 +14,5 @@ fmod-android/loader/out/
 fmod-android/*.jar
 dlcagent/out/
 dlcagent/*.jar
+.DS_Store
+/app_pojavlauncher/
