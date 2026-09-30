@@ -298,7 +298,7 @@ fun main(argv: Array<String>) {
         "pull" -> pull(gameDir(args), force)
         "push" -> push(gameDir(args), force)
         "achievements" -> achievements(gameDir(args), "--submit" in args, "-v" in args)
-        else -> die("usage: wmcloud login | list | pull --game <dir> [--force] | push --game <dir> [--force] | achievements --game <dir> [--submit]")
+        else -> die("usage: wmcloud login | list | pull --game <dir> [--force] | push --game <dir> [--force] | achievements --game <dir> [-v] [--submit]")
     }
     exitProcess(0)
 }

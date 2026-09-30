@@ -37,6 +37,26 @@ fun localAspects(game: File): Set<String> {
     return out
 }
 
+/** One achievement: its stat block, bit, and whether Steam has that bit set. */
+data class Ach(val name: String, val title: String, val desc: String, val block: Int, val bit: Int, val unlockedAt: Int)
+
+/** Parses the schema ourselves: JavaSteam 1.8.0 reads a missing "bit" field and puts every achievement on bit 0. */
+fun parseSchema(snap: `in`.dragonbra.javasteam.steam.handlers.steamuserstats.callback.UserStatsCallback): List<Ach> {
+    val times = snap.achievementBlocks.associate { it.achievementId to it.unlockTime }
+    val out = snap.schemaKeyValues["stats"].children.flatMap { stat ->
+        val block = stat.name?.toIntOrNull() ?: return@flatMap emptyList()
+        stat["bits"].children.map { b ->
+            // The child's key is the bit index.
+            val bit = b.name?.toIntOrNull() ?: die("unreadable bit key in block $block")
+            Ach(b["name"].value ?: die("unnamed achievement in block $block bit $bit"), b["display"]["name"]["english"].value ?: "", b["display"]["desc"]["english"].value ?: "",
+                block, bit, times[block]?.getOrNull(bit) ?: 0)
+        }
+    }
+    val dup = out.groupBy { it.block to it.bit }.filterValues { it.size > 1 }
+    if (dup.isNotEmpty() || out.any { it.bit !in 0..31 }) die("schema maps several achievements to one bit: ${dup.keys}; refusing")
+    return out
+}
+
 fun achievements(game: File, submit: Boolean, verbose: Boolean) {
     val earned = localAspects(game)
     val store = StoreStatsHandler()
@@ -45,27 +65,29 @@ fun achievements(game: File, submit: Boolean, verbose: Boolean) {
         val me = s.client.steamID!!
         val snap = stats.getUserStats(APP_ID, me).toFuture().get(60, TimeUnit.SECONDS)
         if (snap.result != EResult.OK) die("getUserStats failed: ${snap.result}")
-        val schema = snap.getExpandedAchievements().filter { !it.name.isNullOrBlank() }
+        val schema = parseSchema(snap)
         if (schema.isEmpty()) die("Steam returned no achievement schema")
 
         // ponytail: exact aspect-id == API-name matches only; counter-based ones (achievementProgress_*) are skipped
-        val missing = schema.filter { !it.isUnlocked && it.name in earned }
-        println("${schema.count { it.isUnlocked }}/${schema.size} unlocked on Steam; ${schema.count { it.name in earned }} earned locally by exact name")
-        if (verbose) schema.sortedBy { it.unlockTimestamp }.forEach {
-            val t = if (it.isUnlocked) java.time.Instant.ofEpochSecond(it.unlockTimestamp.toLong()).toString().take(10) else "locked    "
-            println("  $t ${if (it.name in earned) "L" else " "} ${it.name}: ${it.displayName} - ${it.description}")
+        val missing = schema.filter { it.unlockedAt == 0 && it.name in earned }
+        println("${schema.count { it.unlockedAt != 0 }}/${schema.size} unlocked on Steam; ${schema.count { it.name in earned }} earned locally by exact name")
+        if (verbose) schema.sortedBy { it.unlockedAt }.forEach {
+            val t = if (it.unlockedAt != 0) java.time.Instant.ofEpochSecond(it.unlockedAt.toLong()).toString().take(10) else "locked    "
+            println("  $t ${if (it.name in earned) "L" else " "} ${it.name}: ${it.title} - ${it.desc}")
         }
-        missing.forEach { println("  missing on Steam: ${it.name} (${it.displayName}: ${it.description})") }
+        missing.forEach { println("  missing on Steam: ${it.name} (${it.title}: ${it.desc})") }
         if (missing.isEmpty()) { println("achievements: in sync"); return }
         if (!submit) { println("dry run; rerun with --submit to unlock these on Steam"); return }
 
-        // Each achievement is bit (id % 100) of stat block (id / 100); write whole blocks, existing bits kept.
-        val masks = HashMap<Int, Int>()
-        for (b in snap.achievementBlocks) masks[b.achievementId] = b.unlockTime.take(32).foldIndexed(0) { i, m, t -> if (t != 0) m or (1 shl i) else m }
-        val touched = missing.map { it.achievementId / 100 to it.achievementId % 100 }.onEach { (block, bit) ->
-            if (block <= 0 || bit !in 0..31) die("bad schema bit for block $block bit $bit")
-            masks[block] = (masks[block] ?: 0) or (1 shl bit)
-        }.map { it.first }.toSortedSet()
+        // Write whole stat blocks: current bits plus the unlocks. Steam ignores bit clears sent this way.
+        val before = snap.achievementBlocks.associate { b -> b.achievementId to b.unlockTime.take(32).foldIndexed(0) { i, m, t -> if (t != 0) m or (1 shl i) else m } }
+        val after = before.toMutableMap()
+        missing.forEach { after[it.block] = (after[it.block] ?: 0) or (1 shl it.bit) }
+        // Guard: the bits that change must be exactly the ones asked for.
+        val changed = after.keys.flatMap { blk -> (0..31).filter { ((before[blk] ?: 0) xor after.getValue(blk)) shr it and 1 == 1 }.map { blk to it } }.toSet()
+        val intended = missing.map { it.block to it.bit }.toSet()
+        if (changed != intended) die("refusing: would change $changed, intended $intended")
+        val touched = changed.map { it.first }.toSortedSet()
 
         val msg = ClientMsgProtobuf<CMsgClientStoreUserStats2.Builder>(CMsgClientStoreUserStats2::class.java, EMsg.ClientStoreUserStats2).apply {
             body.gameId = APP_ID.toLong()
@@ -73,14 +95,14 @@ fun achievements(game: File, submit: Boolean, verbose: Boolean) {
             body.setteeSteamId = me.convertToUInt64()
             body.crcStats = snap.crcStats
             body.explicitReset = false
-            touched.forEach { body.addStats(CMsgClientStoreUserStats2.Stats.newBuilder().setStatId(it).setStatValue(masks.getValue(it))) }
+            touched.forEach { body.addStats(CMsgClientStoreUserStats2.Stats.newBuilder().setStatId(it).setStatValue(after.getValue(it))) }
         }
         store.pending = CompletableFuture()
         s.client.send(msg)
         val res = store.pending!!.get(60, TimeUnit.SECONDS)
         val result = EResult.from(res.eresult)
         if (result != EResult.OK || res.statsOutOfDate || res.statsFailedValidationCount > 0)
-            die("Steam rejected the unlock: $result, outOfDate=${res.statsOutOfDate}, failed=${res.statsFailedValidationList.map { it.statId }}")
+            die("Steam rejected the change: $result, outOfDate=${res.statsOutOfDate}, failed=${res.statsFailedValidationList.map { it.statId }}")
         missing.forEach { println("unlocked ${it.name}") }
     }
 }
