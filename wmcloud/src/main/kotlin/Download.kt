@@ -26,9 +26,9 @@ private fun download(dest: File, only: Set<String>, onProgress: (Float) -> Unit)
         val licenses = try { s.licenses.get(60, TimeUnit.SECONDS) } catch (e: Exception) { die("Steam did not send the account's licenses: $e") }
         val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         // Tests run the downloader in debug mode so a hang shows where it stopped.
-        // JavaSteam's defaults (8 downloads, 8 decompressions) overrun an Android app heap; the CDN,
-        // not concurrency, is the bottleneck anyway.
-        DepotDownloader(s.client, licenses, only.isNotEmpty(), false, 4, 2, 1).use { dd ->
+        // Wildermyth is ~42k small files, one CDN request each, so many requests must be in flight; those
+        // only hold small compressed chunks. Decompression buffers are what overran the heap: keep 2.
+        DepotDownloader(s.client, licenses, only.isNotEmpty(), false, 16, 2, 4).use { dd ->
             dd.addListener(object : IDownloadListener {
                 override fun onStatusUpdate(message: String) = log(message)
                 override fun onChunkCompleted(depotId: Int, depotPercentComplete: Float, compressedBytes: Long, uncompressedBytes: Long) =
