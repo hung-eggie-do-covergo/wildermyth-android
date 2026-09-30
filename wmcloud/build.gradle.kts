@@ -8,6 +8,10 @@ repositories { mavenCentral() }
 
 dependencies {
     implementation("in.dragonbra:javasteam:1.8.0")
+    implementation("in.dragonbra:javasteam-depotdownloader:1.8.0")
+    // Depot chunks are zstd/xz compressed; JavaSteam leaves both optional. The app adds the Android zstd AAR.
+    runtimeOnly("com.github.luben:zstd-jni:1.5.7-6")
+    runtimeOnly("org.tukaani:xz:1.9")
     implementation("com.google.code.gson:gson:2.13.2")
     implementation("com.squareup.okhttp3:okhttp:5.3.2")
     implementation("com.google.protobuf:protobuf-java:4.31.1")

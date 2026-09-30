@@ -29,6 +29,10 @@ object WmCloud {
         }
     }
 
+    /** Downloads the game with the signed-in account into [dest]; progress 0..100 goes to [onProgress]. */
+    @JvmStatic @Throws(WmCloudException::class)
+    fun downloadGame(dest: File, onProgress: Consumer<Float>) = wmcloud.downloadGame(dest) { onProgress.accept(it) }
+
     @JvmStatic @Throws(WmCloudException::class)
     fun pull(game: File, force: Boolean) = wmcloud.pull(game, force)
 

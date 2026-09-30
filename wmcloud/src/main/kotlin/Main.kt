@@ -10,6 +10,8 @@ import `in`.dragonbra.javasteam.steam.authentication.AuthSessionDetails
 import `in`.dragonbra.javasteam.steam.authentication.IChallengeUrlChanged
 import `in`.dragonbra.javasteam.steam.authentication.QrAuthSession
 import `in`.dragonbra.javasteam.steam.handlers.ClientMsgHandler
+import `in`.dragonbra.javasteam.steam.handlers.steamapps.License
+import `in`.dragonbra.javasteam.steam.handlers.steamapps.callback.LicenseListCallback
 import `in`.dragonbra.javasteam.steam.handlers.steamcloud.AppFileChangeList
 import `in`.dragonbra.javasteam.steam.handlers.steamcloud.SteamCloud
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails
@@ -111,6 +113,8 @@ class Session(private val interactive: Boolean, handlers: List<ClientMsgHandler>
     private val manager = CallbackManager(client)
     val cloud: SteamCloud = client.getHandler(SteamCloud::class.java)!!
     private val loggedOn = CompletableFuture<Unit>()
+    /** What the account owns; Steam sends it right after logon and the depot downloader needs it. */
+    val licenses = CompletableFuture<List<License>>()
     @Volatile private var running = true
 
     init {
@@ -119,6 +123,10 @@ class Session(private val interactive: Boolean, handlers: List<ClientMsgHandler>
         manager.subscribe(ConnectedCallback::class.java) { onConnected(token) }
         manager.subscribe(DisconnectedCallback::class.java) {
             loggedOn.completeExceptionally(IllegalStateException("disconnected from Steam"))
+        }
+        manager.subscribe(LicenseListCallback::class.java) {
+            if (it.result == EResult.OK) licenses.complete(it.licenseList)
+            else licenses.completeExceptionally(IllegalStateException("license list: ${it.result}"))
         }
         manager.subscribe(LoggedOnCallback::class.java) {
             if (it.result == EResult.OK) loggedOn.complete(Unit)
@@ -228,6 +236,11 @@ fun backupCloud(game: File, s: Session, files: List<CloudFile>) {
     log("backed up ${files.size} cloud file(s) to ${out.name}")
 }
 
+/** Deleting this much at once is never a normal save; it means the local or cloud side went missing. */
+fun refuseMassDelete(what: String, deleting: Int, of: Int) {
+    if (deleting > 4 && deleting * 4 > of) die("refusing to delete $deleting of $of save files $what; that is not a normal save")
+}
+
 fun pull(game: File, force: Boolean) {
     val state = loadState()
     Session(false).use { s ->
@@ -243,6 +256,7 @@ fun pull(game: File, force: Boolean) {
         val activeRels = active.map { it.rel }.toSet()
         val removed = if (firstSync) emptyList() else state.files.filter { (rel, sha) ->
             rel !in activeRels && local[rel]?.let { sha1(it) == sha } == true }.keys.toList()
+        refuseMassDelete("on this device", removed.size, state.files.size)
         val clobbered = dirty.intersect(incoming.map { it.rel }.toSet())
         if (clobbered.isNotEmpty() && !force) throw ConflictException(clobbered.sorted())
         if (incoming.isNotEmpty() || removed.isNotEmpty()) backup(game)
@@ -266,6 +280,8 @@ fun pull(game: File, force: Boolean) {
 fun push(game: File, force: Boolean) {
     val state = loadState()
     if (state.changeNumber == 0L && !force) die("never synced on this device; run pull, or push --force to make this device's saves win")
+    // No saves folder means no install, not "every save was deleted".
+    if (!File(game, "players").isDirectory) die("no saves folder at ${File(game, "players").path}; not touching the cloud")
     Session(false).use { s ->
         val (list, files) = s.listFiles()
         if (list.currentChangeNumber != state.changeNumber && !force)
@@ -275,6 +291,7 @@ fun push(game: File, force: Boolean) {
         val changed = local.filter { (rel, sha) -> cloudSha[rel] != sha }
         // Synced before and deleted here since (the game rotates story/<n> on save), or never meant to sync.
         val toDelete = cloudSha.keys.filter { (it in state.files && it !in local) || !synced(it) }
+        refuseMassDelete("from Steam Cloud", toDelete.count { synced(it) }, cloudSha.size)
         if (changed.isEmpty() && toDelete.isEmpty()) { log("push: nothing changed"); return }
         // Forcing over a cloud that moved on (or that this device never synced with) discards cloud
         // versions nobody here has seen; keep a copy of each first.
