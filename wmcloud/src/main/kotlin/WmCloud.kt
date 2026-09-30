@@ -8,8 +8,20 @@ import java.util.function.Consumer
 /** The sync operations for Java callers (the Android app), with checked exceptions declared. */
 object WmCloud {
     @JvmStatic fun configure(dir: File, logger: Consumer<String>) {
+        // Android registers its own cut-down provider as "BC" (no SHA-1 among others); JavaSteam asks
+        // for "BC" by name, so put the full bundled BouncyCastle in its place.
+        java.security.Security.removeProvider("BC")
+        java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), 1)
         configDir = dir
         log = { logger.accept(it) }
+    }
+
+    /** Routes JavaSteam's own debug log to [sink] (the app sends it to logcat). */
+    @JvmStatic fun debugLog(sink: Consumer<String>) {
+        `in`.dragonbra.javasteam.util.log.LogManager.addListener(object : `in`.dragonbra.javasteam.util.log.LogListener {
+            override fun onLog(clazz: Class<*>, message: String?, throwable: Throwable?) = sink.accept("${clazz.simpleName}: $message")
+            override fun onError(clazz: Class<*>, message: String?, throwable: Throwable?) = sink.accept("ERROR ${clazz.simpleName}: $message $throwable")
+        })
     }
 
     @JvmStatic fun isLoggedIn() = File(configDir, "token.json").isFile
@@ -28,6 +40,10 @@ object WmCloud {
             }
         }
     }
+
+    /** Downloads only [files] into [dest]: proves sign-in, ownership and chunk download without the full game. */
+    @JvmStatic @Throws(WmCloudException::class)
+    fun testDownload(dest: File, files: Set<String>) = wmcloud.testDownload(dest, files)
 
     /** Downloads the game with the signed-in account into [dest]; progress 0..100 goes to [onProgress]. */
     @JvmStatic @Throws(WmCloudException::class)
