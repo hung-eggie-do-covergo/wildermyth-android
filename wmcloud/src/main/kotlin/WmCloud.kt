@@ -26,6 +26,10 @@ object WmCloud {
 
     @JvmStatic fun isLoggedIn() = File(configDir, "token.json").isFile
 
+    /** Steam account name from the saved sign-in, or null. */
+    @JvmStatic fun accountName(): String? =
+        readPrivate("token.json")?.let { gson.fromJson(it, Token::class.java).account }
+
     /** Blocks until the user approves the QR sign-in in the Steam app; each new challenge URL goes to [onQr]. */
     @JvmStatic @Throws(WmCloudException::class)
     fun login(onQr: Consumer<String>) {
