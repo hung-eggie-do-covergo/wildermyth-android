@@ -32,7 +32,7 @@ private fun download(dest: File, only: Set<String>, onProgress: (Float) -> Unit)
             dd.addListener(object : IDownloadListener {
                 override fun onStatusUpdate(message: String) = log(message)
                 override fun onChunkCompleted(depotId: Int, depotPercentComplete: Float, compressedBytes: Long, uncompressedBytes: Long) =
-                    onProgress(depotPercentComplete)
+                    onProgress(depotPercentComplete * 100) // JavaSteam reports 0..1 despite the name
                 override fun onDownloadFailed(item: DownloadItem, error: Throwable) { failure.set(error) }
             })
             if (only.isNotEmpty()) restrictToFiles(dd, only)
