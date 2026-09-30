@@ -49,6 +49,10 @@ object WmCloud {
     @JvmStatic @Throws(WmCloudException::class)
     fun downloadGame(dest: File, onProgress: Consumer<Float>) = wmcloud.downloadGame(dest) { onProgress.accept(it) }
 
+    /** Wildermyth DLC app IDs the account owns, straight from Steam. */
+    @JvmStatic @Throws(WmCloudException::class)
+    fun ownedDlc(): List<Int> = ownedApps(DLC_APP_IDS)
+
     @JvmStatic @Throws(WmCloudException::class)
     fun pull(game: File, force: Boolean) = wmcloud.pull(game, force)
 

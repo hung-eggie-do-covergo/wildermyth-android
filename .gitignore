@@ -13,3 +13,5 @@ fmod-android/logging/
 fmod-android/fmod_wrap_android.c
 fmod-android/loader/out/
 fmod-android/*.jar
+dlcagent/out/
+dlcagent/*.jar

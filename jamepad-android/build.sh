@@ -9,4 +9,4 @@ python3 jamepad-android/jnigen_lite.py jamepad/src/main/java/com/studiohartman/j
 $N/aarch64-linux-android21-clang++ -shared -fPIC -O2 -std=c++11 -fvisibility=hidden -I jamepad/SDL/include \
   jamepad-android/jamepad.cpp -L$L -lSDL2 -llog -o jamepad-android/libjamepad.so
 cp jamepad-android/libjamepad.so $C/
-(cd $C && cat libgdx.so libgdx-freetype.so libjamepad.so | shasum | cut -c1-12 > version)
+(cd $C && cat libgdx.so libgdx-freetype.so libjamepad.so libfmodJNI.so wm-fmodloader.jar wm-dlcagent.jar | shasum | cut -c1-12 > version)
