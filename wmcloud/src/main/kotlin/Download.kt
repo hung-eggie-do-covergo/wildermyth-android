@@ -16,7 +16,7 @@ fun downloadGame(dest: File, onProgress: (Float) -> Unit) = download(dest, empty
 
 /** End-to-end check of sign-in, ownership, manifests and chunk download that fetches only [files]. */
 fun testDownload(dest: File, files: Set<String>) {
-    download(dest, files) {}
+    download(dest, files) { log("test download %.1f%%".format(it)) }
     val missing = files.filterNot { File(dest, it).isFile }
     if (missing.isNotEmpty()) die("test download finished but $missing did not arrive")
 }
@@ -26,9 +26,6 @@ private fun download(dest: File, only: Set<String>, onProgress: (Float) -> Unit)
         val licenses = try { s.licenses.get(60, TimeUnit.SECONDS) } catch (e: Exception) { die("Steam did not send the account's licenses: $e") }
         val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         // Tests run the downloader in debug mode so a hang shows where it stopped.
-        // Chunks are LZMA with an 8 MB dictionary, and xz allocated a fresh one per ~64 KB chunk: that
-        // churn was both the slowness and the OOMs. A pooling cache reuses the buffers.
-        org.tukaani.xz.ArrayCache.setDefaultCache(org.tukaani.xz.BasicArrayCache.getInstance())
         val (downloads, decompressors) = concurrencyFor(Runtime.getRuntime().maxMemory())
         log("download concurrency: $downloads requests, $decompressors decompressors")
         DepotDownloader(s.client, licenses, only.isNotEmpty(), false, downloads, decompressors, 4).use { dd ->
@@ -63,10 +60,11 @@ private fun restrictToFiles(dd: DepotDownloader, files: Set<String>) {
 }
 
 /**
- * Sized to the heap the OS grants (Android scales it with device RAM), aiming at a quarter of it so the
- * rest of the device is not squeezed: requests hold a chunk each, decompressors a pooled 8 MB dictionary.
+ * Requests in flight (also the IO thread cap) and decompressors, sized to the heap the OS grants (Android
+ * scales it with device RAM). Each IO thread that decompresses keeps an 8 MB LZMA window, so requests are
+ * capped at heap/32 MB: those windows stay within a quarter of the heap.
  */
 internal fun concurrencyFor(maxHeapBytes: Long): Pair<Int, Int> {
     val mb = (maxHeapBytes / (1 shl 20)).toInt()
-    return (mb / 64).coerceIn(2, 8) to (mb / 192).coerceIn(1, 2)
+    return (mb / 32).coerceIn(4, 16) to (mb / 192).coerceIn(1, 2)
 }

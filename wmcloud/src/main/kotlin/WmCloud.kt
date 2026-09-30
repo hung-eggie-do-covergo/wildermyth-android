@@ -8,6 +8,9 @@ import java.util.function.Consumer
 /** The sync operations for Java callers (the Android app), with checked exceptions declared. */
 object WmCloud {
     @JvmStatic fun configure(dir: File, logger: Consumer<String>) {
+        // JavaSteam keeps an 8 MB LZMA window per thread that decompresses a chunk, and chunks decompress
+        // on Dispatchers.IO, which grows to 64 threads: 512 MB. Must be set before Dispatchers.IO is first used.
+        System.setProperty("kotlinx.coroutines.io.parallelism", concurrencyFor(Runtime.getRuntime().maxMemory()).first.toString())
         // Android registers its own cut-down provider as "BC" (no SHA-1 among others); JavaSteam asks
         // for "BC" by name, so put the full bundled BouncyCastle in its place.
         java.security.Security.removeProvider("BC")
