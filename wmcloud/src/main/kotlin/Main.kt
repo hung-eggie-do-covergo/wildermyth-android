@@ -3,6 +3,9 @@ package wmcloud
 import com.google.gson.GsonBuilder
 import `in`.dragonbra.javasteam.protobufs.steamclient.Enums.ECloudStoragePersistState
 import `in`.dragonbra.javasteam.enums.EResult
+import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamclient.CCloud_ClientDeleteFile_Request
+import `in`.dragonbra.javasteam.rpc.service.Cloud
+import `in`.dragonbra.javasteam.steam.handlers.steamunifiedmessages.SteamUnifiedMessages
 import `in`.dragonbra.javasteam.steam.authentication.AuthSessionDetails
 import `in`.dragonbra.javasteam.steam.authentication.IChallengeUrlChanged
 import `in`.dragonbra.javasteam.steam.authentication.QrAuthSession
@@ -153,10 +156,13 @@ fun gameDir(args: List<String>): File {
     return dir
 }
 
+/** Steam's own Auto-Cloud marker; it lives among the saves but is never synced. */
+fun synced(rel: String) = !rel.endsWith("/steam_autocloud.vdf")
+
 /** Local save files, keyed by path relative to the game dir. All of players/ is cloud-synced. */
 fun localFiles(game: File): Map<String, File> =
     File(game, "players").walkTopDown().filter { it.isFile }
-        .associateBy { it.relativeTo(game).invariantSeparatorsPath }
+        .associateBy { it.relativeTo(game).invariantSeparatorsPath }.filterKeys(::synced)
 
 fun download(s: Session, f: CloudFile): ByteArray {
     val info = s.cloud.clientFileDownload(APP_ID, f.cloudName).get()
@@ -193,10 +199,16 @@ fun pull(game: File, force: Boolean) {
         // With no sync history yet, every existing local file counts as possibly edited.
         val firstSync = state.changeNumber == 0L
         val dirty = local.filter { (rel, f) -> firstSync || state.files[rel]?.let { it != sha1(f) } == true }.keys
-        val incoming = files.filter { !it.deleted && local[it.rel]?.let { l -> sha1(l) } != it.sha }
+        val active = files.filter { !it.deleted && synced(it.rel) }
+        val incoming = active.filter { local[it.rel]?.let { l -> sha1(l) } != it.sha }
+        // Gone from the cloud since last sync: delete locally, unless edited here since.
+        val activeRels = active.map { it.rel }.toSet()
+        val removed = if (firstSync) emptyList() else state.files.filter { (rel, sha) ->
+            rel !in activeRels && local[rel]?.let { sha1(it) == sha } == true }.keys.toList()
         val clobbered = dirty.intersect(incoming.map { it.rel }.toSet())
         if (clobbered.isNotEmpty() && !force) die("local changes not pushed yet, would be overwritten: ${clobbered.sorted()} (keep this device: push --force, keep the cloud: pull --force)")
-        if (incoming.isNotEmpty()) backup(game)
+        if (incoming.isNotEmpty() || removed.isNotEmpty()) backup(game)
+        for (rel in removed) { File(game, rel).delete(); println("deleted $rel") }
         for (f in incoming) {
             val bytes = download(s, f)
             val dest = File(game, f.rel).apply { parentFile.mkdirs() }
@@ -207,9 +219,9 @@ fun pull(game: File, force: Boolean) {
         }
         state.changeNumber = list.currentChangeNumber
         state.files.clear()
-        files.filter { !it.deleted }.forEach { state.files[it.rel] = it.sha }
+        active.forEach { state.files[it.rel] = it.sha }
         saveState(state)
-        println("pull done: ${incoming.size} updated, ${files.count { !it.deleted }} in cloud, change ${list.currentChangeNumber}")
+        println("pull done: ${incoming.size} updated, ${removed.size} deleted, ${active.size} in cloud, change ${list.currentChangeNumber}")
     }
 }
 
@@ -221,13 +233,24 @@ fun push(game: File, force: Boolean) {
         if (list.currentChangeNumber != state.changeNumber && !force)
             die("cloud changed since last pull (${state.changeNumber} -> ${list.currentChangeNumber}), another device synced; pull first")
         val cloudSha = files.filter { !it.deleted }.associate { it.rel to it.sha }
-        // ponytail: uploads new/changed files only; local deletions are not propagated to the cloud
-        val changed = localFiles(game).mapValues { sha1(it.value) }.filter { (rel, sha) -> cloudSha[rel] != sha }
-        if (changed.isEmpty()) { println("push: nothing changed"); return }
+        val local = localFiles(game).mapValues { sha1(it.value) }
+        val changed = local.filter { (rel, sha) -> cloudSha[rel] != sha }
+        // Synced before and deleted here since (the game rotates story/<n> on save), or never meant to sync.
+        val toDelete = cloudSha.keys.filter { (it in state.files && it !in local) || !synced(it) }
+        if (changed.isEmpty() && toDelete.isEmpty()) { println("push: nothing changed"); return }
         if (state.clientId == 0L) state.clientId = System.nanoTime()
         val batch = s.cloud.beginAppUploadBatch(APP_ID, filesToUpload = changed.keys.map { ROOT + it },
+            filesToDelete = toDelete.map { ROOT + it },
             clientId = state.clientId, appBuildId = 0).get()
         var ok = true
+        // The batch only announces deletes; each one still needs its own call.
+        val rpc = s.client.getHandler(SteamUnifiedMessages::class.java)!!.createService<Cloud>()
+        for (rel in toDelete) {
+            val req = CCloud_ClientDeleteFile_Request.newBuilder().setAppid(APP_ID).setFilename(ROOT + rel)
+                .setIsExplicitDelete(true).setUploadBatchId(batch.batchID).build()
+            val res = rpc.clientDeleteFile(req).toFuture().get()
+            if (res.result != EResult.OK) { ok = false; System.err.println("delete $rel: ${res.result}") }
+        }
         for ((rel, sha) in changed) {
             val file = File(game, rel)
             val bytes = file.readBytes()
@@ -249,9 +272,10 @@ fun push(game: File, force: Boolean) {
         if (!ok) die("some uploads failed; cloud batch marked failed, local saves untouched")
         state.changeNumber = batch.appChangeNumber
         state.files.clear()
-        state.files.putAll(cloudSha + changed)
+        state.files.putAll(cloudSha - toDelete.toSet() + changed)
+        toDelete.forEach { println("deleted from cloud $it") }
         saveState(state)
-        println("push done: ${changed.size} uploaded, change ${batch.appChangeNumber}")
+        println("push done: ${changed.size} uploaded, ${toDelete.size} deleted, change ${batch.appChangeNumber}")
     }
 }
 
