@@ -26,9 +26,12 @@ private fun download(dest: File, only: Set<String>, onProgress: (Float) -> Unit)
         val licenses = try { s.licenses.get(60, TimeUnit.SECONDS) } catch (e: Exception) { die("Steam did not send the account's licenses: $e") }
         val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         // Tests run the downloader in debug mode so a hang shows where it stopped.
-        // Wildermyth is ~42k small files, one CDN request each, so many requests must be in flight; those
-        // only hold small compressed chunks. Decompression buffers are what overran the heap: keep 2.
-        DepotDownloader(s.client, licenses, only.isNotEmpty(), false, 16, 2, 4).use { dd ->
+        // Chunks are LZMA with an 8 MB dictionary, and xz allocated a fresh one per ~64 KB chunk: that
+        // churn was both the slowness and the OOMs. A pooling cache reuses the buffers.
+        org.tukaani.xz.ArrayCache.setDefaultCache(org.tukaani.xz.BasicArrayCache.getInstance())
+        val (downloads, decompressors) = concurrencyFor(Runtime.getRuntime().maxMemory())
+        log("download concurrency: $downloads requests, $decompressors decompressors")
+        DepotDownloader(s.client, licenses, only.isNotEmpty(), false, downloads, decompressors, 4).use { dd ->
             dd.addListener(object : IDownloadListener {
                 override fun onStatusUpdate(message: String) = log(message)
                 override fun onChunkCompleted(depotId: Int, depotPercentComplete: Float, compressedBytes: Long, uncompressedBytes: Long) =
@@ -57,4 +60,13 @@ private fun restrictToFiles(dd: DepotDownloader, files: Set<String>) {
     cfg.javaClass.getDeclaredField("usingFileList").apply { isAccessible = true }.setBoolean(cfg, true)
     @Suppress("UNCHECKED_CAST")
     (cfg.javaClass.getDeclaredField("filesToDownload").apply { isAccessible = true }.get(cfg) as HashSet<String>).addAll(files)
+}
+
+/**
+ * Sized to the heap the OS grants (Android scales it with device RAM), aiming at a quarter of it so the
+ * rest of the device is not squeezed: requests hold a chunk each, decompressors a pooled 8 MB dictionary.
+ */
+internal fun concurrencyFor(maxHeapBytes: Long): Pair<Int, Int> {
+    val mb = (maxHeapBytes / (1 shl 20)).toInt()
+    return (mb / 64).coerceIn(2, 8) to (mb / 192).coerceIn(1, 2)
 }

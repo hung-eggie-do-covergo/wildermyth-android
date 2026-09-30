@@ -12,6 +12,7 @@ dependencies {
     // Depot chunks are zstd/xz compressed; JavaSteam leaves both optional. The app adds the Android zstd AAR.
     runtimeOnly("com.github.luben:zstd-jni:1.5.7-6")
     runtimeOnly("org.tukaani:xz:1.9")
+    compileOnly("org.tukaani:xz:1.9") // ArrayCache (since 1.7); the app supplies its own xz at runtime
     implementation("com.google.code.gson:gson:2.13.2")
     implementation("com.squareup.okhttp3:okhttp:5.3.2")
     implementation("com.google.protobuf:protobuf-java:4.31.1")
