@@ -212,7 +212,20 @@ fun backup(game: File) {
         }
     } catch (e: Exception) { out.delete(); die("backup of players/ failed, not touching saves: $e") }
     // ponytail: keeps the newest 10 backups, count-based not age-based
-    dir.listFiles()!!.sortedByDescending { it.name }.drop(10).forEach { it.delete() }
+    dir.listFiles()!!.filter { it.isFile }.sortedByDescending { it.lastModified() }.drop(10).forEach { it.delete() }
+}
+
+/** Saves the cloud versions of [files] as a zip under players-backups/ before they are overwritten. */
+fun backupCloud(game: File, s: Session, files: List<CloudFile>) {
+    if (files.isEmpty()) return
+    val dir = File(game, "players-backups").apply { mkdirs() }
+    val out = File(dir, "cloud-${System.currentTimeMillis() / 1000}.zip")
+    try {
+        ZipOutputStream(out.outputStream().buffered()).use { z ->
+            for (f in files) { z.putNextEntry(ZipEntry(f.rel)); z.write(download(s, f)); z.closeEntry() }
+        }
+    } catch (e: Exception) { out.delete(); die("could not back up the cloud saves, not overwriting them: $e") }
+    log("backed up ${files.size} cloud file(s) to ${out.name}")
 }
 
 fun pull(game: File, force: Boolean) {
@@ -263,6 +276,10 @@ fun push(game: File, force: Boolean) {
         // Synced before and deleted here since (the game rotates story/<n> on save), or never meant to sync.
         val toDelete = cloudSha.keys.filter { (it in state.files && it !in local) || !synced(it) }
         if (changed.isEmpty() && toDelete.isEmpty()) { log("push: nothing changed"); return }
+        // Forcing over a cloud that moved on (or that this device never synced with) discards cloud
+        // versions nobody here has seen; keep a copy of each first.
+        if (force && list.currentChangeNumber != state.changeNumber)
+            backupCloud(game, s, files.filter { !it.deleted && (it.rel in changed || it.rel in toDelete) })
         if (state.clientId == 0L) state.clientId = System.nanoTime()
         val batch = s.cloud.beginAppUploadBatch(APP_ID, filesToUpload = changed.keys.map { ROOT + it },
             filesToDelete = toDelete.map { ROOT + it },

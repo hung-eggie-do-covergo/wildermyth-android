@@ -18,7 +18,15 @@ object WmCloud {
     @JvmStatic @Throws(WmCloudException::class)
     fun login(onQr: Consumer<String>) {
         onQrChallenge = { onQr.accept(it) }
-        Session(true).use { }
+        // Steam drops a not-yet-signed-in connection after a minute or so; start over with a fresh
+        // code rather than failing while the user is still reaching for their phone.
+        val deadline = System.currentTimeMillis() + 10 * 60_000
+        while (true) {
+            try { Session(true).use { }; return } catch (e: WmCloudException) {
+                if (isLoggedIn() || System.currentTimeMillis() > deadline) throw e
+                log("Steam dropped the connection; showing a new code")
+            }
+        }
     }
 
     @JvmStatic @Throws(WmCloudException::class)
