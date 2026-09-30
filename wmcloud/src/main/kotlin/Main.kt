@@ -4,7 +4,8 @@ import com.google.gson.GsonBuilder
 import `in`.dragonbra.javasteam.protobufs.steamclient.Enums.ECloudStoragePersistState
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.steam.authentication.AuthSessionDetails
-import `in`.dragonbra.javasteam.steam.authentication.UserConsoleAuthenticator
+import `in`.dragonbra.javasteam.steam.authentication.IChallengeUrlChanged
+import `in`.dragonbra.javasteam.steam.authentication.QrAuthSession
 import `in`.dragonbra.javasteam.steam.handlers.steamcloud.AppFileChangeList
 import `in`.dragonbra.javasteam.steam.handlers.steamcloud.SteamCloud
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails
@@ -15,6 +16,8 @@ import `in`.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackManager
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.DisconnectedCallback
 import okhttp3.Headers
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.google.zxing.qrcode.encoder.Encoder
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -59,11 +62,30 @@ fun writePrivate(name: String, text: String) {
     Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
 }
 
+/** Prints a QR code two modules per line with half blocks, so it fits a short terminal. */
+fun printQr(text: String) {
+    val m = Encoder.encode(text, ErrorCorrectionLevel.L).matrix
+    val q = 2 // quiet zone
+    // Light modules are drawn as glyphs: terminals are light-on-dark.
+    fun light(x: Int, y: Int) = x < 0 || y < 0 || x >= m.width || y >= m.height || m.get(x, y).toInt() == 0
+    val sb = StringBuilder()
+    for (y in -q until m.height + q step 2) {
+        for (x in -q until m.width + q) sb.append(when {
+            light(x, y) && light(x, y + 1) -> '█'
+            light(x, y) -> '▀'
+            light(x, y + 1) -> '▄'
+            else -> ' '
+        })
+        sb.append('\n')
+    }
+    print(sb)
+}
+
 fun loadState(): State = readPrivate("state.json")?.let { gson.fromJson(it, State::class.java) } ?: State()
 fun saveState(s: State) = writePrivate("state.json", gson.toJson(s))
 
-/** Connects and logs on; with no token, runs the interactive credential + Steam Guard flow. */
-class Session(interactive: Boolean) : AutoCloseable {
+/** Connects and logs on; with no token, runs the interactive QR-code flow. */
+class Session(private val interactive: Boolean) : AutoCloseable {
     val client = SteamClient()
     private val manager = CallbackManager(client)
     val cloud: SteamCloud = client.getHandler(SteamCloud::class.java)!!
@@ -83,19 +105,20 @@ class Session(interactive: Boolean) : AutoCloseable {
         }
         Thread { while (running) manager.runWaitCallbacks(500L) }.apply { isDaemon = true }.start()
         client.connect()
-        try { loggedOn.get(120, TimeUnit.SECONDS) } catch (e: Exception) { die(e.cause?.message ?: e.toString()) }
+        try { loggedOn.get(if (interactive) 600 else 120, TimeUnit.SECONDS) } catch (e: Exception) { die(e.cause?.message ?: e.toString()) }
     }
 
     private fun onConnected(token: Token?) {
         val (account, refresh) = token?.let { it.account to it.refreshToken } ?: run {
-            val console = System.console() ?: die("login needs an interactive terminal")
-            val user = console.readLine("Steam username: ")
-            val pass = String(console.readPassword("Steam password: "))
-            val details = AuthSessionDetails().apply {
-                username = user; password = pass; persistentSession = true
-                authenticator = UserConsoleAuthenticator()
+            val session = client.authentication.beginAuthSessionViaQR(AuthSessionDetails().apply { persistentSession = true }).get()
+            // Steam rotates the challenge every ~30s; redraw each time.
+            val draw = { q: QrAuthSession ->
+                println("\nScan with the Steam mobile app (Steam Guard > scan QR), or open: ${q.challengeUrl}")
+                printQr(q.challengeUrl)
             }
-            val poll = client.authentication.beginAuthSessionViaCredentials(details).get().pollingWaitForResult().get()
+            session.challengeUrlChanged = IChallengeUrlChanged { it?.let(draw) }
+            draw(session)
+            val poll = session.pollingWaitForResult().get()
             writePrivate("token.json", gson.toJson(Token(poll.accountName, poll.refreshToken)))
             poll.accountName to poll.refreshToken
         }
