@@ -28,14 +28,13 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.util.Date
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 import kotlin.system.exitProcess
 
 const val APP_ID = 763890 // Wildermyth
@@ -43,7 +42,15 @@ const val ROOT = "%GameInstall%" // Auto-Cloud root "1": the game install dir
 
 val gson = GsonBuilder().setPrettyPrinting().create()
 val http = OkHttpClient()
-val configDir = File(System.getProperty("user.home"), ".config/wmcloud")
+/** Where the token and sync state live; the app points this at its private files dir. */
+var configDir = File(System.getProperty("user.home"), ".config/wmcloud")
+/** Progress lines; the CLI prints them, the app shows them. */
+var log: (String) -> Unit = { println(it) }
+/** Receives each Steam QR challenge URL during login; the CLI draws it in the terminal. */
+var onQrChallenge: (String) -> Unit = {
+    println("\nScan with the Steam mobile app (Steam Guard > scan QR), or open: $it")
+    printQr(it)
+}
 
 data class Token(val account: String, val refreshToken: String)
 data class State(var changeNumber: Long = 0, var clientId: Long = 0, val files: MutableMap<String, String> = mutableMapOf())
@@ -51,7 +58,14 @@ data class State(var changeNumber: Long = 0, var clientId: Long = 0, val files: 
 /** A cloud file: full cloud name (with root token) and the path relative to the game dir. */
 data class CloudFile(val cloudName: String, val rel: String, val sha: String, val size: Int, val deleted: Boolean)
 
-fun die(msg: String): Nothing { System.err.println("wmcloud: $msg"); exitProcess(1) }
+open class WmCloudException(msg: String) : Exception(msg)
+/** Pulling would overwrite local saves that were never uploaded. */
+class ConflictException(val files: List<String>) :
+    WmCloudException("local changes not pushed yet, would be overwritten: $files (keep this device: push --force, keep the cloud: pull --force)")
+/** Another device synced since this one last pulled. */
+class CloudChangedException(msg: String) : WmCloudException(msg)
+
+fun die(msg: String): Nothing = throw WmCloudException(msg)
 
 fun sha1(f: File): String = hex(MessageDigest.getInstance("SHA-1").digest(f.readBytes()))
 fun sha1(b: ByteArray): String = hex(MessageDigest.getInstance("SHA-1").digest(b))
@@ -64,8 +78,9 @@ fun writePrivate(name: String, text: String) {
     val f = File(configDir, name)
     val tmp = File(configDir, "$name.tmp")
     tmp.writeText(text)
-    Files.setPosixFilePermissions(tmp.toPath(), PosixFilePermissions.fromString("rw-------"))
-    Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    tmp.setReadable(false, false); tmp.setReadable(true, true)
+    tmp.setWritable(false, false); tmp.setWritable(true, true)
+    if (!tmp.renameTo(f)) die("cannot write ${f.path}")
 }
 
 /** Prints a QR code two modules per line with half blocks, so it fits a short terminal. */
@@ -113,17 +128,17 @@ class Session(private val interactive: Boolean, handlers: List<ClientMsgHandler>
         handlers.forEach { client.addHandler(it) }
         Thread { while (running) manager.runWaitCallbacks(500L) }.apply { isDaemon = true }.start()
         client.connect()
-        try { loggedOn.get(if (interactive) 600 else 120, TimeUnit.SECONDS) } catch (e: Exception) { die(e.cause?.message ?: e.toString()) }
+        try { loggedOn.get(if (interactive) 600 else 120, TimeUnit.SECONDS) } catch (e: Exception) {
+            close()
+            die(e.cause?.message ?: e.toString())
+        }
     }
 
     private fun onConnected(token: Token?) {
         val (account, refresh) = token?.let { it.account to it.refreshToken } ?: run {
             val session = client.authentication.beginAuthSessionViaQR(AuthSessionDetails().apply { persistentSession = true }).get()
             // Steam rotates the challenge every ~30s; redraw each time.
-            val draw = { q: QrAuthSession ->
-                println("\nScan with the Steam mobile app (Steam Guard > scan QR), or open: ${q.challengeUrl}")
-                printQr(q.challengeUrl)
-            }
+            val draw = { q: QrAuthSession -> onQrChallenge(q.challengeUrl) }
             session.challengeUrlChanged = IChallengeUrlChanged { it?.let(draw) }
             draw(session)
             val poll = session.pollingWaitForResult().get()
@@ -188,9 +203,14 @@ fun backup(game: File) {
     val players = File(game, "players")
     if (!players.exists()) return
     val dir = File(game, "players-backups").apply { mkdirs() }
-    val out = File(dir, "players-${System.currentTimeMillis() / 1000}.tar.gz")
-    val p = ProcessBuilder("tar", "-czf", out.path, "-C", game.path, "players").inheritIO().start()
-    if (p.waitFor() != 0) die("backup of players/ failed; not touching saves")
+    val out = File(dir, "players-${System.currentTimeMillis() / 1000}.zip")
+    try {
+        ZipOutputStream(out.outputStream().buffered()).use { z ->
+            players.walkTopDown().filter { it.isFile }.forEach { f ->
+                z.putNextEntry(ZipEntry(f.relativeTo(game).invariantSeparatorsPath)); f.inputStream().use { it.copyTo(z) }; z.closeEntry()
+            }
+        }
+    } catch (e: Exception) { out.delete(); die("backup of players/ failed, not touching saves: $e") }
     // ponytail: keeps the newest 10 backups, count-based not age-based
     dir.listFiles()!!.sortedByDescending { it.name }.drop(10).forEach { it.delete() }
 }
@@ -211,22 +231,22 @@ fun pull(game: File, force: Boolean) {
         val removed = if (firstSync) emptyList() else state.files.filter { (rel, sha) ->
             rel !in activeRels && local[rel]?.let { sha1(it) == sha } == true }.keys.toList()
         val clobbered = dirty.intersect(incoming.map { it.rel }.toSet())
-        if (clobbered.isNotEmpty() && !force) die("local changes not pushed yet, would be overwritten: ${clobbered.sorted()} (keep this device: push --force, keep the cloud: pull --force)")
+        if (clobbered.isNotEmpty() && !force) throw ConflictException(clobbered.sorted())
         if (incoming.isNotEmpty() || removed.isNotEmpty()) backup(game)
-        for (rel in removed) { File(game, rel).delete(); println("deleted $rel") }
+        for (rel in removed) { File(game, rel).delete(); log("deleted $rel") }
         for (f in incoming) {
             val bytes = download(s, f)
             val dest = File(game, f.rel).apply { parentFile.mkdirs() }
             val tmp = File(dest.path + ".wmcloud")
             tmp.writeBytes(bytes)
-            Files.move(tmp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            println("pulled ${f.rel}")
+            if (!tmp.renameTo(dest)) die("cannot write ${dest.path}")
+            log("pulled ${f.rel}")
         }
         state.changeNumber = list.currentChangeNumber
         state.files.clear()
         active.forEach { state.files[it.rel] = it.sha }
         saveState(state)
-        println("pull done: ${incoming.size} updated, ${removed.size} deleted, ${active.size} in cloud, change ${list.currentChangeNumber}")
+        log("pull done: ${incoming.size} updated, ${removed.size} deleted, ${active.size} in cloud, change ${list.currentChangeNumber}")
     }
 }
 
@@ -236,13 +256,13 @@ fun push(game: File, force: Boolean) {
     Session(false).use { s ->
         val (list, files) = s.listFiles()
         if (list.currentChangeNumber != state.changeNumber && !force)
-            die("cloud changed since last pull (${state.changeNumber} -> ${list.currentChangeNumber}), another device synced; pull first")
+            throw CloudChangedException("cloud changed since last pull (${state.changeNumber} -> ${list.currentChangeNumber}), another device synced; pull first")
         val cloudSha = files.filter { !it.deleted }.associate { it.rel to it.sha }
         val local = localFiles(game).mapValues { sha1(it.value) }
         val changed = local.filter { (rel, sha) -> cloudSha[rel] != sha }
         // Synced before and deleted here since (the game rotates story/<n> on save), or never meant to sync.
         val toDelete = cloudSha.keys.filter { (it in state.files && it !in local) || !synced(it) }
-        if (changed.isEmpty() && toDelete.isEmpty()) { println("push: nothing changed"); return }
+        if (changed.isEmpty() && toDelete.isEmpty()) { log("push: nothing changed"); return }
         if (state.clientId == 0L) state.clientId = System.nanoTime()
         val batch = s.cloud.beginAppUploadBatch(APP_ID, filesToUpload = changed.keys.map { ROOT + it },
             filesToDelete = toDelete.map { ROOT + it },
@@ -254,7 +274,7 @@ fun push(game: File, force: Boolean) {
             val req = CCloud_ClientDeleteFile_Request.newBuilder().setAppid(APP_ID).setFilename(ROOT + rel)
                 .setIsExplicitDelete(true).setUploadBatchId(batch.batchID).build()
             val res = rpc.clientDeleteFile(req).toFuture().get()
-            if (res.result != EResult.OK) { ok = false; System.err.println("delete $rel: ${res.result}") }
+            if (res.result != EResult.OK) { ok = false; log("delete $rel: ${res.result}") }
         }
         for ((rel, sha) in changed) {
             val file = File(game, rel)
@@ -268,19 +288,19 @@ fun push(game: File, force: Boolean) {
                 val req = Request.Builder().url((if (b.useHttps) "https://" else "http://") + b.urlHost + b.urlPath)
                     .headers(Headers.headersOf(*b.requestHeaders.flatMap { listOf(it.name, it.value) }.toTypedArray()))
                     .put(body.toRequestBody()).build()
-                http.newCall(req).execute().use { r -> if (!r.isSuccessful) { fileOk = false; System.err.println("upload $rel: HTTP ${r.code}") } }
+                http.newCall(req).execute().use { r -> if (!r.isSuccessful) { fileOk = false; log("upload $rel: HTTP ${r.code}") } }
             }
             val committed = s.cloud.commitFileUpload(fileOk, APP_ID, unhex(sha), ROOT + rel).get()
-            if (!fileOk || !committed) ok = false else println("pushed $rel")
+            if (!fileOk || !committed) ok = false else log("pushed $rel")
         }
         s.cloud.completeAppUploadBatch(APP_ID, batch.batchID, if (ok) EResult.OK else EResult.Fail).get()
         if (!ok) die("some uploads failed; cloud batch marked failed, local saves untouched")
         state.changeNumber = batch.appChangeNumber
         state.files.clear()
         state.files.putAll(cloudSha - toDelete.toSet() + changed)
-        toDelete.forEach { println("deleted from cloud $it") }
+        toDelete.forEach { log("deleted from cloud $it") }
         saveState(state)
-        println("push done: ${changed.size} uploaded, ${toDelete.size} deleted, change ${batch.appChangeNumber}")
+        log("push done: ${changed.size} uploaded, ${toDelete.size} deleted, change ${batch.appChangeNumber}")
     }
 }
 
@@ -288,6 +308,14 @@ fun main(argv: Array<String>) {
     if (System.getenv("WMCLOUD_DEBUG") != null) LogManager.addListener(DefaultLogListener())
     val args = argv.toList()
     val force = "--force" in args
+    try { run(args, force) } catch (e: WmCloudException) {
+        System.err.println("wmcloud: ${e.message}")
+        exitProcess(1)
+    }
+    exitProcess(0)
+}
+
+private fun run(args: List<String>, force: Boolean) {
     when (args.firstOrNull()) {
         "login" -> Session(true).use { println("logged in; token saved to ${configDir.path}/token.json") }
         "list" -> Session(false).use { s ->
@@ -300,5 +328,4 @@ fun main(argv: Array<String>) {
         "achievements" -> achievements(gameDir(args), "--submit" in args, "-v" in args)
         else -> die("usage: wmcloud login | list | pull --game <dir> [--force] | push --game <dir> [--force] | achievements --game <dir> [-v] [--submit]")
     }
-    exitProcess(0)
 }

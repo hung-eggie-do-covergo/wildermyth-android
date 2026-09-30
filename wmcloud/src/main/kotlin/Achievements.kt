@@ -70,14 +70,14 @@ fun achievements(game: File, submit: Boolean, verbose: Boolean) {
 
         // ponytail: exact aspect-id == API-name matches only; counter-based ones (achievementProgress_*) are skipped
         val missing = schema.filter { it.unlockedAt == 0 && it.name in earned }
-        println("${schema.count { it.unlockedAt != 0 }}/${schema.size} unlocked on Steam; ${schema.count { it.name in earned }} earned locally by exact name")
+        log("${schema.count { it.unlockedAt != 0 }}/${schema.size} unlocked on Steam; ${schema.count { it.name in earned }} earned locally by exact name")
         if (verbose) schema.sortedBy { it.unlockedAt }.forEach {
             val t = if (it.unlockedAt != 0) java.time.Instant.ofEpochSecond(it.unlockedAt.toLong()).toString().take(10) else "locked    "
-            println("  $t ${if (it.name in earned) "L" else " "} ${it.name}: ${it.title} - ${it.desc}")
+            log("  $t ${if (it.name in earned) "L" else " "} ${it.name}: ${it.title} - ${it.desc}")
         }
-        missing.forEach { println("  missing on Steam: ${it.name} (${it.title}: ${it.desc})") }
-        if (missing.isEmpty()) { println("achievements: in sync"); return }
-        if (!submit) { println("dry run; rerun with --submit to unlock these on Steam"); return }
+        missing.forEach { log("  missing on Steam: ${it.name} (${it.title}: ${it.desc})") }
+        if (missing.isEmpty()) { log("achievements: in sync"); return }
+        if (!submit) { log("dry run; rerun with --submit to unlock these on Steam"); return }
 
         // Write whole stat blocks: current bits plus the unlocks. Steam ignores bit clears sent this way.
         val before = snap.achievementBlocks.associate { b -> b.achievementId to b.unlockTime.take(32).foldIndexed(0) { i, m, t -> if (t != 0) m or (1 shl i) else m } }
@@ -103,6 +103,6 @@ fun achievements(game: File, submit: Boolean, verbose: Boolean) {
         val result = EResult.from(res.eresult)
         if (result != EResult.OK || res.statsOutOfDate || res.statsFailedValidationCount > 0)
             die("Steam rejected the change: $result, outOfDate=${res.statsOutOfDate}, failed=${res.statsFailedValidationList.map { it.statId }}")
-        missing.forEach { println("unlocked ${it.name}") }
+        missing.forEach { log("unlocked ${it.name}") }
     }
 }
