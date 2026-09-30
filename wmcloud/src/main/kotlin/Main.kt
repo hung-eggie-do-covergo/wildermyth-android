@@ -9,6 +9,7 @@ import `in`.dragonbra.javasteam.steam.handlers.steamunifiedmessages.SteamUnified
 import `in`.dragonbra.javasteam.steam.authentication.AuthSessionDetails
 import `in`.dragonbra.javasteam.steam.authentication.IChallengeUrlChanged
 import `in`.dragonbra.javasteam.steam.authentication.QrAuthSession
+import `in`.dragonbra.javasteam.steam.handlers.ClientMsgHandler
 import `in`.dragonbra.javasteam.steam.handlers.steamcloud.AppFileChangeList
 import `in`.dragonbra.javasteam.steam.handlers.steamcloud.SteamCloud
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails
@@ -18,6 +19,8 @@ import `in`.dragonbra.javasteam.steam.steamclient.SteamClient
 import `in`.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackManager
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.DisconnectedCallback
+import `in`.dragonbra.javasteam.util.log.DefaultLogListener
+import `in`.dragonbra.javasteam.util.log.LogManager
 import okhttp3.Headers
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.qrcode.encoder.Encoder
@@ -88,7 +91,7 @@ fun loadState(): State = readPrivate("state.json")?.let { gson.fromJson(it, Stat
 fun saveState(s: State) = writePrivate("state.json", gson.toJson(s))
 
 /** Connects and logs on; with no token, runs the interactive QR-code flow. */
-class Session(private val interactive: Boolean) : AutoCloseable {
+class Session(private val interactive: Boolean, handlers: List<ClientMsgHandler> = emptyList()) : AutoCloseable {
     val client = SteamClient()
     private val manager = CallbackManager(client)
     val cloud: SteamCloud = client.getHandler(SteamCloud::class.java)!!
@@ -106,6 +109,8 @@ class Session(private val interactive: Boolean) : AutoCloseable {
             if (it.result == EResult.OK) loggedOn.complete(Unit)
             else loggedOn.completeExceptionally(IllegalStateException("logon failed: ${it.result} / ${it.extendedResult}"))
         }
+        // Handlers must be added before connecting: the receive loop iterates them unguarded.
+        handlers.forEach { client.addHandler(it) }
         Thread { while (running) manager.runWaitCallbacks(500L) }.apply { isDaemon = true }.start()
         client.connect()
         try { loggedOn.get(if (interactive) 600 else 120, TimeUnit.SECONDS) } catch (e: Exception) { die(e.cause?.message ?: e.toString()) }
@@ -280,6 +285,7 @@ fun push(game: File, force: Boolean) {
 }
 
 fun main(argv: Array<String>) {
+    if (System.getenv("WMCLOUD_DEBUG") != null) LogManager.addListener(DefaultLogListener())
     val args = argv.toList()
     val force = "--force" in args
     when (args.firstOrNull()) {
@@ -291,7 +297,8 @@ fun main(argv: Array<String>) {
         }
         "pull" -> pull(gameDir(args), force)
         "push" -> push(gameDir(args), force)
-        else -> die("usage: wmcloud login | list | pull --game <dir> [--force] | push --game <dir> [--force]")
+        "achievements" -> achievements(gameDir(args), "--submit" in args, "-v" in args)
+        else -> die("usage: wmcloud login | list | pull --game <dir> [--force] | push --game <dir> [--force] | achievements --game <dir> [--submit]")
     }
     exitProcess(0)
 }
