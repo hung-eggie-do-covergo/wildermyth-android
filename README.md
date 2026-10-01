@@ -36,6 +36,8 @@ Hence this app: it runs the PC version of the game on the Thor, with your Steam 
 | First run | Steam sign-in |
 |---|---|
 | ![First run: use your own game files or download them with Steam](docs/welcome.jpeg) | ![Sign in by scanning a QR code with the Steam app](docs/qr-login.jpeg) |
+| **The game, driven by the controller** | **Saves synced after a session** |
+| ![Wildermyth's main menu running on the Thor, with the controller's A prompt](docs/main-menu.jpeg) | ![All synced: Play again or close](docs/synced.jpeg) |
 
 ## Features
 
