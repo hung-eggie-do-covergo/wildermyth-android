@@ -38,8 +38,8 @@ Hence this app: it runs the PC version of the game on the Thor, with your Steam 
 | ![First run: use your own game files or download them with Steam](docs/welcome.jpeg) | ![Sign in by scanning a QR code with the Steam app](docs/qr-login.jpeg) |
 | **The game, driven by the controller** | **Saves synced after a session** |
 | ![Wildermyth's main menu running on the Thor, with the controller's A prompt](docs/main-menu.jpeg) | ![All synced: Play again or close](docs/synced.jpeg) |
-| **Both sides changed: you choose** | |
-| ![Saves differ: keep this device or use Steam Cloud; the other copy is backed up](docs/conflict.jpeg) | |
+| **Both sides changed: you choose** | **Battle, with controller prompts** |
+| ![Saves differ: keep this device or use Steam Cloud; the other copy is backed up](docs/conflict.jpeg) | ![A tactical battle on the Thor, with the game's controller hints](docs/battle.jpeg) |
 
 ## Features
 
