@@ -1,12 +1,28 @@
 ![Wildermyth on Android](docs/banner.png)
 
 **v0.1** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
-Not affiliated with Worldwalker Games or Valve. You need your own copy of the game.
+Not affiliated with Worldwalker Games or Valve.
 
-**Get Wildermyth:** [Steam](https://store.steampowered.com/app/763890/Wildermyth/) ·
-[GOG](https://www.gog.com/en/game/wildermyth) · [Epic Games Store](https://store.epicgames.com/en-US/p/wildermyth-593344).
-The Steam version gets the most from this app: in-app download, Steam Cloud saves, achievements and DLC.
-Copies from other stores can be loaded with "Use my game files", but that path is untested.
+> [!IMPORTANT]
+> **Bring your own game.** You need your own copy of Wildermyth:
+> [Steam](https://store.steampowered.com/app/763890/Wildermyth/),
+> [GOG](https://www.gog.com/en/game/wildermyth) or
+> [Epic Games Store](https://store.epicgames.com/en-US/p/wildermyth-593344). No game files ship with the app.
+> The Steam version gets the most out of it: in-app download, cloud saves, achievements and DLC. Copies from
+> other stores load through "Use my game files", which is untested.
+>
+> **Download and play.** Get the APK from the
+> [Releases page](https://github.com/hung-eggie-do-covergo/wildermyth-android/releases) and install it on your
+> Thor. On first launch, pick your game files or sign in to Steam to download the game.
+>
+> **AI disclosure:** This project was built with Claude (Anthropic's AI coding assistant, via Claude Code).
+> Claude wrote most of the code and docs. We decided what to build, tested every step on a real Thor, and
+> reviewed the results. Read the code before you trust it, and keep backups of your saves.
+
+**Questions or bugs?** [Open an issue](https://github.com/hung-eggie-do-covergo/wildermyth-android/issues).
+
+[Features](#features) · [Pictures](#pictures) · [How it works](#how-it-works) ·
+[Status and limits](#status-and-limits) · [Building](#building) · [Credits](#credits) · [License](#license)
 
 ## TL;DR
 
@@ -64,13 +80,6 @@ Clone with `--recurse-submodules`. Needs the Android SDK and NDK, JDK 17, and yo
 ```
 
 Release signing reads `~/.config/wildermyth/signing.properties`; without it, build `assembleDebug`.
-
-## AI disclosure
-
-This project was built with an AI coding assistant (Anthropic's Claude, in Claude Code). The assistant
-wrote most of the code, build scripts and this README under human direction; a human chose what to build,
-tested each step on the device, and reviewed the results. Treat it like any hobby project: read the code
-before trusting it with things you care about, and keep backups of your saves.
 
 ## Credits
 
