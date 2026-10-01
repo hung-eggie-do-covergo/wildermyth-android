@@ -10,10 +10,10 @@ Copies from other stores can be loaded with "Use my game files", but that path i
 
 ## TL;DR
 
-We love the [AYN Thor](https://www.ayntec.com) and we love Wildermyth, and there was no proper way to play one
-on the other: no Android version, no Linux ARM build, and streaming from a PC is not the same as carrying the
-campfire in your pocket. So this app runs the real desktop game on the Thor, with your Steam saves,
-achievements and DLC, and a controller that just works.
+The [AYN Thor](https://www.ayntec.com) is a great handheld, and Wildermyth would have been perfect on it,
+but there's no Android version and the PC version doesn't run on Android as is.
+
+Hence this app: it runs the PC version of the game on the Thor, with your Steam saves, achievements and DLC.
 
 ## Pictures
 
@@ -21,7 +21,7 @@ achievements and DLC, and a controller that just works.
 |---|---|
 | ![First run: use your own game files or download them with Steam](docs/welcome.jpeg) | ![Sign in by scanning a QR code with the Steam app](docs/qr-login.jpeg) |
 
-## What it does
+## Features
 
 - **One APK, no terminal.** Install, then either point it at your game files or sign in to Steam and let it
   download the game (about 3 GB, a few minutes on good Wi-Fi). The download keeps going with the screen off.
