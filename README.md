@@ -23,19 +23,17 @@ Hence this app: it runs the PC version of the game on the Thor, with your Steam 
 
 ## Features
 
-- **One APK, no terminal.** Install, then either point it at your game files or sign in to Steam and let it
-  download the game (about 3 GB, a few minutes on good Wi-Fi). The download keeps going with the screen off.
-- **Steam sign-in by QR code**, scanned with the Steam app. No password is typed or stored; the app keeps
-  only Steam's sign-in token, in its private storage.
-- **Steam Cloud saves.** Saves are pulled before you play and pushed when you quit, so the Thor and your PC
-  share one legacy. If both changed, the app asks which to keep and backs up the other.
-- **Steam achievements** earned in the game are sent to Steam after each session.
-- **DLC** you own on Steam is unlocked in the game; DLC you don't own stays locked.
-- **Controller, sound and graphics**: the handheld's pad through SDL, the game's FMOD audio, and OpenGL on
-  Vulkan (Zink on Turnip).
+- **Install the game from the app.** Pick your own game files, or sign in to Steam and download the game
+  (about 3 GB). The download keeps going with the screen off.
+- **Sign in with a QR code** from the Steam app. You never type your password.
+- **Steam Cloud saves.** Saves download before you play and upload when you quit, so you can switch between
+  the Thor and your PC. If both changed, the app asks which to keep and backs up the other.
+- **Steam achievements** unlock as you play and sync after each session.
+- **DLC** you own on Steam is unlocked.
+- **Controller and sound** work out of the box.
 
-Tested on the AYN Thor (Snapdragon 8 Gen 2, Android 13). Other arm64 devices with a Turnip-capable Adreno
-GPU may work, but are untested.
+Tested on the AYN Thor (Snapdragon 8 Gen 2, Android 13). Other Android handhelds with a Snapdragon chip may
+work, but haven't been tested.
 
 ## How it works
 
