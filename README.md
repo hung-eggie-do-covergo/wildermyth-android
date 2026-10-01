@@ -32,6 +32,11 @@ Android as is.
 
 Hence this app: it runs the PC version of the game on the Thor, with your Steam saves, achievements and DLC.
 
+To bring this amazing game to more people, the app is free and open source. If you haven't played Wildermyth
+yet, give it a try: it's on [Steam](https://store.steampowered.com/app/763890/Wildermyth/),
+[GOG](https://www.gog.com/en/game/wildermyth) and
+[Epic](https://store.epicgames.com/en-US/p/wildermyth-593344).
+
 ## Pictures
 
 | First run | Steam sign-in |
