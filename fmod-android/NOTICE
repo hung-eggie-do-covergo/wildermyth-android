@@ -1,0 +1,7 @@
+libfmodJNI.so is built from fmod-jni (https://github.com/NateAustin/fmod-jni),
+Copyright 2015-2019 Nate Austin, licensed under the Apache License, Version 2.0
+(see LICENSE-fmod-jni.txt).
+
+Changes for Android, made by build.sh: every JNI entry point in the SWIG wrapper
+(nativeSwigWrapperLibraries/c_jni_wrapper/fmod_wrap.c) first attaches its thread
+to ART via wm_attach_art() (onload.c), and the library is built for arm64-v8a.

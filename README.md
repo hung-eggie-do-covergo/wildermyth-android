@@ -85,7 +85,7 @@ This stands on other people's work. Thank you.
 - **[SilksongAndroid-Achievements](https://github.com/OmegaUwUr/SilksongAndroid-Achievements)** by OmegaUwUr,
   which showed a PC game with its Steam features could feel at home on an Android handheld.
 - **[JavaSteam](https://github.com/Longi94/JavaSteam)** for sign-in, Steam Cloud, achievements and the depot download.
-- **[fmod-jni](https://github.com/NateAustin/fmod-jni)** by Nate Austin, the game's FMOD bridge, rebuilt here for Android.
+- **[fmod-jni](https://github.com/NateAustin/fmod-jni)** by Nate Austin (Apache-2.0), the game's FMOD bridge, rebuilt here for Android; changes are listed in `fmod-android/NOTICE`.
 - **[Jamepad](https://github.com/libgdx/Jamepad)**, **[libGDX](https://libgdx.com)**, **[LWJGL](https://www.lwjgl.org)**
   and **[SDL](https://libsdl.org)**.
 - **[Mesa](https://mesa3d.org)** for Zink and Turnip.
