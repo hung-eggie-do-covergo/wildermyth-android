@@ -2,7 +2,8 @@
 # Builds Jamepad 2.0.20.0's JNI for Android arm64 against the app's SDL2, into the app's assets.
 set -e
 cd "$(dirname "$0")/.."
-N=~/Library/Android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/darwin-x86_64/bin
+# NDK r27 (ANDROID_NDK_HOME); the host tag is darwin-x86_64 on macOS, linux-x86_64 on Linux.
+N=${ANDROID_NDK_HOME:?set ANDROID_NDK_HOME to an NDK r27 install}/toolchains/llvm/prebuilt/$(uname -s | tr A-Z a-z)-x86_64/bin
 L=amethyst/app_pojavlauncher/build/intermediates/stripped_native_libs/debug/stripDebugDebugSymbols/out/lib/arm64-v8a
 C=amethyst/app_pojavlauncher/src/main/assets/components/wildermyth
 python3 jamepad-android/jnigen_lite.py jamepad/src/main/java/com/studiohartman/jamepad > jamepad-android/jamepad.cpp

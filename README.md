@@ -54,7 +54,8 @@ work, but haven't been tested.
 ## How it works
 
 Wildermyth is a Java 8 / libGDX / LWJGL game. The app runs the game's own desktop jar, unmodified, on a
-bundled Java 8 runtime, swapping in Android builds of the native pieces the game expects.
+bundled Java 8 runtime, swapping in Android builds of the game's native libraries (graphics, controller and
+sound).
 
 | Directory | What it is |
 |---|---|
@@ -66,17 +67,22 @@ bundled Java 8 runtime, swapping in Android builds of the native pieces the game
 
 ## Status and limits
 
-- Download speed dips during the long stretch of tiny files (latency to Steam's CDN, not bandwidth).
-- Built and tested on one device. Expect rough edges elsewhere.
+- Downloads slow down during the long stretch of small files. That's latency to Steam's servers, not your
+  connection.
+- Only tested on one device.
 
 ## Building
 
-Clone with `--recurse-submodules`. Needs the Android SDK and NDK, JDK 17, and your own FMOD Studio API
-1.10.12 for Android. Build the bridges with `jamepad-android/build.sh` and `fmod-android/build.sh`, then from
-`amethyst/`:
+Clone with `--recurse-submodules`. You need the Android SDK, NDK r27 and JDK 17. To rebuild the controller
+and sound bridges you also need [Jamepad](https://github.com/libgdx/Jamepad) cloned into `jamepad/`,
+[fmod-jni](https://github.com/NateAustin/fmod-jni) cloned into `fmod-jni/`, and the FMOD Studio API 1.10.12
+for Android from [fmod.com](https://www.fmod.com/download).
 
 ```sh
-./gradlew :app_pojavlauncher:assembleRelease
+export ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/27.3.13750724   # your NDK r27
+export FMOD_SDK=~/fmodstudioapi11012android/api                     # the SDK's api/ directory
+jamepad-android/build.sh && fmod-android/build.sh                   # optional: prebuilt copies are in the app
+cd amethyst && ./gradlew :app_pojavlauncher:assembleRelease
 ```
 
 Release signing reads `~/.config/wildermyth/signing.properties`; without it, build `assembleDebug`.
