@@ -3,6 +3,11 @@
 **v0.1** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
 Not affiliated with Worldwalker Games or Valve. You need your own copy of the game.
 
+**Get Wildermyth:** [Steam](https://store.steampowered.com/app/763890/Wildermyth/) ·
+[GOG](https://www.gog.com/en/game/wildermyth) · [Epic Games Store](https://store.epicgames.com/en-US/p/wildermyth-593344).
+The Steam version gets the most from this app: in-app download, Steam Cloud saves, achievements and DLC.
+Copies from other stores can be loaded with "Use my game files", but that path is untested.
+
 ## TL;DR
 
 We love the [AYN Thor](https://www.ayntec.com) and we love Wildermyth, and there was no proper way to play one
@@ -47,8 +52,6 @@ bundled Java 8 runtime, swapping in Android builds of the native pieces the game
 
 ## Status and limits
 
-- **Private for now.** The APK bundles FMOD's Android libraries, which FMOD's licence does not let us
-  redistribute. A public release needs another way to get them onto the device.
 - Download speed dips during the long stretch of tiny files (latency to Steam's CDN, not bandwidth).
 - Built and tested on one device. Expect rough edges elsewhere.
 
@@ -86,7 +89,9 @@ This stands on other people's work. Thank you.
 - **[Jamepad](https://github.com/libgdx/Jamepad)**, **[libGDX](https://libgdx.com)**, **[LWJGL](https://www.lwjgl.org)**
   and **[SDL](https://libsdl.org)**.
 - **[Mesa](https://mesa3d.org)** for Zink and Turnip.
-- **[FMOD](https://www.fmod.com)** by Firelight Technologies for the game's audio.
+- **FMOD Studio** by Firelight Technologies Pty Ltd for the game's audio. The APK bundles the FMOD
+  Studio API 1.10.12 Android runtime under FMOD's non-commercial licence; this project is free and never
+  monetised.
 - **[Alegreya](https://github.com/huertatipografica/Alegreya)** by Huerta Tipográfica (SIL OFL 1.1), the setup screen's font.
 - **[OkHttp](https://square.github.io/okhttp/)**, **[Bouncy Castle](https://www.bouncycastle.org)**,
   **[ZXing](https://github.com/zxing/zxing)**, **[XZ for Java](https://tukaani.org/xz/java.html)**,
