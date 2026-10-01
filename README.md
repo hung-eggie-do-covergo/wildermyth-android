@@ -99,3 +99,11 @@ This stands on other people's work. Thank you.
   **[Protocol Buffers](https://protobuf.dev)**.
 
 Wildermyth and its art belong to Worldwalker Games. None of the game's files ship in this app.
+
+## License
+
+This repository's own code (`wmcloud/`, `dlcagent/`, `jamepad-android/`, `fmod-android/` scripts and sources)
+is [MIT](LICENSE). The app in `amethyst/` is a fork of Amethyst-Android and stays under the
+[LGPL-3.0](https://github.com/AngelAuraMC/Amethyst-Android/blob/v3_openjdk/LICENSE). Bundled third-party
+components keep their own licences: FMOD under FMOD's EULA, fmod-jni under Apache-2.0
+([notice](fmod-android/NOTICE)), and Alegreya under the SIL OFL 1.1.
