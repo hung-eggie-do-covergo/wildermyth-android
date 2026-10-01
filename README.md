@@ -16,7 +16,7 @@ Not affiliated with Worldwalker Games or Valve.
 > Thor. On first launch, pick your game files or sign in to Steam to download the game.
 >
 > **AI disclosure:** This project was built with Claude (Anthropic's AI coding assistant, via Claude Code).
-> Claude wrote most of the code and docs. We decided what to build, tested every step on a real Thor, and
+> Claude wrote most of the code and docs. I decided what to build, tested every step on a real Thor, and
 > reviewed the results. Read the code before you trust it, and keep backups of your saves.
 
 **Questions or bugs?** [Open an issue](https://github.com/hung-eggie-do-covergo/wildermyth-android/issues).
@@ -26,8 +26,9 @@ Not affiliated with Worldwalker Games or Valve.
 
 ## TL;DR
 
-The [AYN Thor](https://www.ayntec.com) is a great handheld, and Wildermyth would have been perfect on it,
-but there's no Android version and the PC version doesn't run on Android as is.
+Wildermyth is one of my favorite games, and the [AYN Thor](https://www.ayntec.com) is a great handheld.
+The game would have been perfect on it, but there's no Android version and the PC version doesn't run on
+Android as is.
 
 Hence this app: it runs the PC version of the game on the Thor, with your Steam saves, achievements and DLC.
 
