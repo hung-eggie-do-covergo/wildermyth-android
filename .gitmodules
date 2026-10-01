@@ -1,4 +1,4 @@
 [submodule "amethyst"]
 	path = amethyst
-	url = git@github.com:hung-eggie-do-covergo/amethyst-wildermyth.git
+	url = https://github.com/hung-eggie-do-covergo/amethyst-wildermyth.git
 	branch = wildermyth
