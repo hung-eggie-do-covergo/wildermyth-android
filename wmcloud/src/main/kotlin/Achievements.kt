@@ -58,51 +58,54 @@ fun parseSchema(snap: `in`.dragonbra.javasteam.steam.handlers.steamuserstats.cal
 }
 
 fun achievements(game: File, submit: Boolean, verbose: Boolean) {
-    val earned = localAspects(game)
     val store = StoreStatsHandler()
-    Session(false, listOf(store)).use { s ->
-        val stats = s.client.getHandler(SteamUserStats::class.java)!!
-        val me = s.client.steamID!!
-        val snap = stats.getUserStats(APP_ID, me).toFuture().get(60, TimeUnit.SECONDS)
-        if (snap.result != EResult.OK) die("getUserStats failed: ${snap.result}")
-        val schema = parseSchema(snap)
-        if (schema.isEmpty()) die("Steam returned no achievement schema")
+    Session(false, listOf(store)).use { achievements(it, store, game, submit, verbose) }
+}
 
-        // ponytail: exact aspect-id == API-name matches only; counter-based ones (achievementProgress_*) are skipped
-        val missing = schema.filter { it.unlockedAt == 0 && it.name in earned }
-        log("${schema.count { it.unlockedAt != 0 }}/${schema.size} unlocked on Steam; ${schema.count { it.name in earned }} earned locally by exact name")
-        if (verbose) schema.sortedBy { it.unlockedAt }.forEach {
-            val t = if (it.unlockedAt != 0) java.time.Instant.ofEpochSecond(it.unlockedAt.toLong()).toString().take(10) else "locked    "
-            log("  $t ${if (it.name in earned) "L" else " "} ${it.name}: ${it.title} - ${it.desc}")
-        }
-        missing.forEach { log("  missing on Steam: ${it.name} (${it.title}: ${it.desc})") }
-        if (missing.isEmpty()) { log("achievements: in sync"); return }
-        if (!submit) { log("dry run; rerun with --submit to unlock these on Steam"); return }
+/** [store] must have been passed to [s] at creation: handlers can't be added once connected. */
+fun achievements(s: Session, store: StoreStatsHandler, game: File, submit: Boolean, verbose: Boolean) {
+    val earned = localAspects(game)
+    val stats = s.client.getHandler(SteamUserStats::class.java)!!
+    val me = s.client.steamID!!
+    val snap = stats.getUserStats(APP_ID, me).toFuture().get(60, TimeUnit.SECONDS)
+    if (snap.result != EResult.OK) die("getUserStats failed: ${snap.result}")
+    val schema = parseSchema(snap)
+    if (schema.isEmpty()) die("Steam returned no achievement schema")
 
-        // Write whole stat blocks: current bits plus the unlocks. Steam ignores bit clears sent this way.
-        val before = snap.achievementBlocks.associate { b -> b.achievementId to b.unlockTime.take(32).foldIndexed(0) { i, m, t -> if (t != 0) m or (1 shl i) else m } }
-        val after = before.toMutableMap()
-        missing.forEach { after[it.block] = (after[it.block] ?: 0) or (1 shl it.bit) }
-        // Guard: the bits that change must be exactly the ones asked for.
-        val changed = after.keys.flatMap { blk -> (0..31).filter { ((before[blk] ?: 0) xor after.getValue(blk)) shr it and 1 == 1 }.map { blk to it } }.toSet()
-        val intended = missing.map { it.block to it.bit }.toSet()
-        if (changed != intended) die("refusing: would change $changed, intended $intended")
-        val touched = changed.map { it.first }.toSortedSet()
-
-        val msg = ClientMsgProtobuf<CMsgClientStoreUserStats2.Builder>(CMsgClientStoreUserStats2::class.java, EMsg.ClientStoreUserStats2).apply {
-            body.gameId = APP_ID.toLong()
-            body.settorSteamId = me.convertToUInt64()
-            body.setteeSteamId = me.convertToUInt64()
-            body.crcStats = snap.crcStats
-            body.explicitReset = false
-            touched.forEach { body.addStats(CMsgClientStoreUserStats2.Stats.newBuilder().setStatId(it).setStatValue(after.getValue(it))) }
-        }
-        store.pending = CompletableFuture()
-        s.client.send(msg)
-        val res = store.pending!!.get(60, TimeUnit.SECONDS)
-        val result = EResult.from(res.eresult)
-        if (result != EResult.OK || res.statsOutOfDate || res.statsFailedValidationCount > 0)
-            die("Steam rejected the change: $result, outOfDate=${res.statsOutOfDate}, failed=${res.statsFailedValidationList.map { it.statId }}")
-        missing.forEach { log("unlocked ${it.name}") }
+    // ponytail: exact aspect-id == API-name matches only; counter-based ones (achievementProgress_*) are skipped
+    val missing = schema.filter { it.unlockedAt == 0 && it.name in earned }
+    log("${schema.count { it.unlockedAt != 0 }}/${schema.size} unlocked on Steam; ${schema.count { it.name in earned }} earned locally by exact name")
+    if (verbose) schema.sortedBy { it.unlockedAt }.forEach {
+        val t = if (it.unlockedAt != 0) java.time.Instant.ofEpochSecond(it.unlockedAt.toLong()).toString().take(10) else "locked    "
+        log("  $t ${if (it.name in earned) "L" else " "} ${it.name}: ${it.title} - ${it.desc}")
     }
+    missing.forEach { log("  missing on Steam: ${it.name} (${it.title}: ${it.desc})") }
+    if (missing.isEmpty()) { log("achievements: in sync"); return }
+    if (!submit) { log("dry run; rerun with --submit to unlock these on Steam"); return }
+
+    // Write whole stat blocks: current bits plus the unlocks. Steam ignores bit clears sent this way.
+    val before = snap.achievementBlocks.associate { b -> b.achievementId to b.unlockTime.take(32).foldIndexed(0) { i, m, t -> if (t != 0) m or (1 shl i) else m } }
+    val after = before.toMutableMap()
+    missing.forEach { after[it.block] = (after[it.block] ?: 0) or (1 shl it.bit) }
+    // Guard: the bits that change must be exactly the ones asked for.
+    val changed = after.keys.flatMap { blk -> (0..31).filter { ((before[blk] ?: 0) xor after.getValue(blk)) shr it and 1 == 1 }.map { blk to it } }.toSet()
+    val intended = missing.map { it.block to it.bit }.toSet()
+    if (changed != intended) die("refusing: would change $changed, intended $intended")
+    val touched = changed.map { it.first }.toSortedSet()
+
+    val msg = ClientMsgProtobuf<CMsgClientStoreUserStats2.Builder>(CMsgClientStoreUserStats2::class.java, EMsg.ClientStoreUserStats2).apply {
+        body.gameId = APP_ID.toLong()
+        body.settorSteamId = me.convertToUInt64()
+        body.setteeSteamId = me.convertToUInt64()
+        body.crcStats = snap.crcStats
+        body.explicitReset = false
+        touched.forEach { body.addStats(CMsgClientStoreUserStats2.Stats.newBuilder().setStatId(it).setStatValue(after.getValue(it))) }
+    }
+    store.pending = CompletableFuture()
+    s.client.send(msg)
+    val res = store.pending!!.get(60, TimeUnit.SECONDS)
+    val result = EResult.from(res.eresult)
+    if (result != EResult.OK || res.statsOutOfDate || res.statsFailedValidationCount > 0)
+        die("Steam rejected the change: $result, outOfDate=${res.statsOutOfDate}, failed=${res.statsFailedValidationList.map { it.statId }}")
+    missing.forEach { log("unlocked ${it.name}") }
 }

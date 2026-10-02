@@ -111,19 +111,19 @@ fun saveState(s: State) = writePrivate("state.json", gson.toJson(s))
  * JavaSteam fetches CDN chunks with OkHttp's async calls, which OkHttp's default dispatcher limits to 5 per
  * host; every chunk comes from one CDN host, so without this a download never had more than 5 in flight.
  */
-fun steamConfiguration(): `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration {
+val steamConfiguration: `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration by lazy {
     val perHost = concurrencyFor(Runtime.getRuntime().maxMemory()).first
     val http = OkHttpClient.Builder()
         .dispatcher(okhttp3.Dispatcher().apply { maxRequests = 64; maxRequestsPerHost = perHost })
         .connectionPool(okhttp3.ConnectionPool(perHost, 5, TimeUnit.MINUTES))
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).writeTimeout(30, TimeUnit.SECONDS)
         .build()
-    return `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration.create { it.withHttpClient(http) }
+    `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration.create { it.withHttpClient(http) }
 }
 
 /** Connects and logs on; with no token, runs the interactive QR-code flow. */
 class Session(private val interactive: Boolean, handlers: List<ClientMsgHandler> = emptyList()) : AutoCloseable {
-    val client = SteamClient(steamConfiguration())
+    val client = SteamClient(steamConfiguration)
     private val manager = CallbackManager(client)
     val cloud: SteamCloud = client.getHandler(SteamCloud::class.java)!!
     private val loggedOn = CompletableFuture<Unit>()
@@ -255,101 +255,101 @@ fun refuseMassDelete(what: String, deleting: Int, of: Int) {
     if (deleting > 4 && deleting * 4 > of) die("refusing to delete $deleting of $of save files $what; that is not a normal save")
 }
 
-fun pull(game: File, force: Boolean) {
+fun pull(game: File, force: Boolean) = Session(false).use { pull(it, game, force) }
+
+fun pull(s: Session, game: File, force: Boolean) {
     val state = loadState()
-    Session(false).use { s ->
-        val (list, files) = s.listFiles()
-        val local = localFiles(game)
-        // A local file edited since the last sync would be clobbered; stop unless forced.
-        // With no sync history yet, every existing local file counts as possibly edited.
-        val firstSync = state.changeNumber == 0L
-        val dirty = local.filter { (rel, f) -> firstSync || state.files[rel]?.let { it != sha1(f) } == true }.keys
-        val active = files.filter { !it.deleted && synced(it.rel) }
-        val incoming = active.filter { local[it.rel]?.let { l -> sha1(l) } != it.sha }
-        // Gone from the cloud since last sync: delete locally, unless edited here since.
-        val activeRels = active.map { it.rel }.toSet()
-        val removed = if (firstSync) emptyList() else state.files.filter { (rel, sha) ->
-            rel !in activeRels && local[rel]?.let { sha1(it) == sha } == true }.keys.toList()
-        refuseMassDelete("on this device", removed.size, state.files.size)
-        val clobbered = dirty.intersect(incoming.map { it.rel }.toSet())
-        if (clobbered.isNotEmpty() && !force) throw ConflictException(clobbered.sorted())
-        if (incoming.isNotEmpty() || removed.isNotEmpty()) backup(game)
-        for (rel in removed) { File(game, rel).delete(); log("deleted $rel") }
-        for (f in incoming) {
-            val bytes = download(s, f)
-            val dest = File(game, f.rel).apply { parentFile.mkdirs() }
-            val tmp = File(dest.path + ".wmcloud")
-            tmp.writeBytes(bytes)
-            if (!tmp.renameTo(dest)) die("cannot write ${dest.path}")
-            log("pulled ${f.rel}")
-        }
-        state.changeNumber = list.currentChangeNumber
-        state.files.clear()
-        active.forEach { state.files[it.rel] = it.sha }
-        saveState(state)
-        log("pull done: ${incoming.size} updated, ${removed.size} deleted, ${active.size} in cloud, change ${list.currentChangeNumber}")
+    val (list, files) = s.listFiles()
+    val local = localFiles(game).mapValues { sha1(it.value) }
+    // A local file edited since the last sync would be clobbered; stop unless forced.
+    // With no sync history yet, every existing local file counts as possibly edited.
+    val firstSync = state.changeNumber == 0L
+    val dirty = local.filter { (rel, sha) -> firstSync || state.files[rel]?.let { it != sha } == true }.keys
+    val active = files.filter { !it.deleted && synced(it.rel) }
+    val incoming = active.filter { local[it.rel] != it.sha }
+    // Gone from the cloud since last sync: delete locally, unless edited here since.
+    val activeRels = active.map { it.rel }.toSet()
+    val removed = if (firstSync) emptyList() else state.files.filter { (rel, sha) ->
+        rel !in activeRels && local[rel] == sha }.keys.toList()
+    refuseMassDelete("on this device", removed.size, state.files.size)
+    val clobbered = dirty.intersect(incoming.map { it.rel }.toSet())
+    if (clobbered.isNotEmpty() && !force) throw ConflictException(clobbered.sorted())
+    if (incoming.isNotEmpty() || removed.isNotEmpty()) backup(game)
+    for (rel in removed) { File(game, rel).delete(); log("deleted $rel") }
+    for (f in incoming) {
+        val bytes = download(s, f)
+        val dest = File(game, f.rel).apply { parentFile.mkdirs() }
+        val tmp = File(dest.path + ".wmcloud")
+        tmp.writeBytes(bytes)
+        if (!tmp.renameTo(dest)) die("cannot write ${dest.path}")
+        log("pulled ${f.rel}")
     }
+    state.changeNumber = list.currentChangeNumber
+    state.files.clear()
+    active.forEach { state.files[it.rel] = it.sha }
+    saveState(state)
+    log("pull done: ${incoming.size} updated, ${removed.size} deleted, ${active.size} in cloud, change ${list.currentChangeNumber}")
 }
 
-fun push(game: File, force: Boolean) {
+fun push(game: File, force: Boolean) = Session(false).use { push(it, game, force) }
+
+fun push(s: Session, game: File, force: Boolean) {
     val state = loadState()
     if (state.changeNumber == 0L && !force) die("never synced on this device; run pull, or push --force to make this device's saves win")
     // No saves folder means no install, not "every save was deleted".
     if (!File(game, "players").isDirectory) die("no saves folder at ${File(game, "players").path}; not touching the cloud")
-    Session(false).use { s ->
-        val (list, files) = s.listFiles()
-        if (list.currentChangeNumber != state.changeNumber && !force)
-            throw CloudChangedException("cloud changed since last pull (${state.changeNumber} -> ${list.currentChangeNumber}), another device synced; pull first")
-        val cloudSha = files.filter { !it.deleted }.associate { it.rel to it.sha }
-        val local = localFiles(game).mapValues { sha1(it.value) }
-        val changed = local.filter { (rel, sha) -> cloudSha[rel] != sha }
-        // Synced before and deleted here since (the game rotates story/<n> on save), or never meant to sync.
-        val toDelete = cloudSha.keys.filter { (it in state.files && it !in local) || !synced(it) }
-        refuseMassDelete("from Steam Cloud", toDelete.count { synced(it) }, cloudSha.size)
-        if (changed.isEmpty() && toDelete.isEmpty()) { log("push: nothing changed"); return }
-        // Forcing over a cloud that moved on (or that this device never synced with) discards cloud
-        // versions nobody here has seen; keep a copy of each first.
-        if (force && list.currentChangeNumber != state.changeNumber)
-            backupCloud(game, s, files.filter { !it.deleted && (it.rel in changed || it.rel in toDelete) })
-        if (state.clientId == 0L) state.clientId = System.nanoTime()
-        val batch = s.cloud.beginAppUploadBatch(APP_ID, filesToUpload = changed.keys.map { ROOT + it },
-            filesToDelete = toDelete.map { ROOT + it },
-            clientId = state.clientId, appBuildId = 0).get()
-        var ok = true
-        // The batch only announces deletes; each one still needs its own call.
-        val rpc = s.client.getHandler(SteamUnifiedMessages::class.java)!!.createService<Cloud>()
-        for (rel in toDelete) {
-            val req = CCloud_ClientDeleteFile_Request.newBuilder().setAppid(APP_ID).setFilename(ROOT + rel)
-                .setIsExplicitDelete(true).setUploadBatchId(batch.batchID).build()
-            val res = rpc.clientDeleteFile(req).toFuture().get()
-            if (res.result != EResult.OK) { ok = false; log("delete $rel: ${res.result}") }
-        }
-        for ((rel, sha) in changed) {
-            val file = File(game, rel)
-            val bytes = file.readBytes()
-            val info = s.cloud.beginFileUpload(APP_ID, bytes.size, bytes.size, unhex(sha), Date(file.lastModified()),
-                ROOT + rel, canEncrypt = false, uploadBatchId = batch.batchID).get()
-            var fileOk = true
-            for (b in info.blockRequests) {
-                val body = if (b.explicitBodyData.isNotEmpty()) b.explicitBodyData
-                    else bytes.copyOfRange(b.blockOffset.toInt(), b.blockOffset.toInt() + b.blockLength)
-                val req = Request.Builder().url((if (b.useHttps) "https://" else "http://") + b.urlHost + b.urlPath)
-                    .headers(Headers.headersOf(*b.requestHeaders.flatMap { listOf(it.name, it.value) }.toTypedArray()))
-                    .put(body.toRequestBody()).build()
-                http.newCall(req).execute().use { r -> if (!r.isSuccessful) { fileOk = false; log("upload $rel: HTTP ${r.code}") } }
-            }
-            val committed = s.cloud.commitFileUpload(fileOk, APP_ID, unhex(sha), ROOT + rel).get()
-            if (!fileOk || !committed) ok = false else log("pushed $rel")
-        }
-        s.cloud.completeAppUploadBatch(APP_ID, batch.batchID, if (ok) EResult.OK else EResult.Fail).get()
-        if (!ok) die("some uploads failed; cloud batch marked failed, local saves untouched")
-        state.changeNumber = batch.appChangeNumber
-        state.files.clear()
-        state.files.putAll(cloudSha - toDelete.toSet() + changed)
-        toDelete.forEach { log("deleted from cloud $it") }
-        saveState(state)
-        log("push done: ${changed.size} uploaded, ${toDelete.size} deleted, change ${batch.appChangeNumber}")
+    val (list, files) = s.listFiles()
+    if (list.currentChangeNumber != state.changeNumber && !force)
+        throw CloudChangedException("cloud changed since last pull (${state.changeNumber} -> ${list.currentChangeNumber}), another device synced; pull first")
+    val cloudSha = files.filter { !it.deleted }.associate { it.rel to it.sha }
+    val local = localFiles(game).mapValues { sha1(it.value) }
+    val changed = local.filter { (rel, sha) -> cloudSha[rel] != sha }
+    // Synced before and deleted here since (the game rotates story/<n> on save), or never meant to sync.
+    val toDelete = cloudSha.keys.filter { (it in state.files && it !in local) || !synced(it) }
+    refuseMassDelete("from Steam Cloud", toDelete.count { synced(it) }, cloudSha.size)
+    if (changed.isEmpty() && toDelete.isEmpty()) { log("push: nothing changed"); return }
+    // Forcing over a cloud that moved on (or that this device never synced with) discards cloud
+    // versions nobody here has seen; keep a copy of each first.
+    if (force && list.currentChangeNumber != state.changeNumber)
+        backupCloud(game, s, files.filter { !it.deleted && (it.rel in changed || it.rel in toDelete) })
+    if (state.clientId == 0L) state.clientId = System.nanoTime()
+    val batch = s.cloud.beginAppUploadBatch(APP_ID, filesToUpload = changed.keys.map { ROOT + it },
+        filesToDelete = toDelete.map { ROOT + it },
+        clientId = state.clientId, appBuildId = 0).get()
+    var ok = true
+    // The batch only announces deletes; each one still needs its own call.
+    val rpc = s.client.getHandler(SteamUnifiedMessages::class.java)!!.createService<Cloud>()
+    for (rel in toDelete) {
+        val req = CCloud_ClientDeleteFile_Request.newBuilder().setAppid(APP_ID).setFilename(ROOT + rel)
+            .setIsExplicitDelete(true).setUploadBatchId(batch.batchID).build()
+        val res = rpc.clientDeleteFile(req).toFuture().get()
+        if (res.result != EResult.OK) { ok = false; log("delete $rel: ${res.result}") }
     }
+    for ((rel, sha) in changed) {
+        val file = File(game, rel)
+        val bytes = file.readBytes()
+        val info = s.cloud.beginFileUpload(APP_ID, bytes.size, bytes.size, unhex(sha), Date(file.lastModified()),
+            ROOT + rel, canEncrypt = false, uploadBatchId = batch.batchID).get()
+        var fileOk = true
+        for (b in info.blockRequests) {
+            val body = if (b.explicitBodyData.isNotEmpty()) b.explicitBodyData
+                else bytes.copyOfRange(b.blockOffset.toInt(), b.blockOffset.toInt() + b.blockLength)
+            val req = Request.Builder().url((if (b.useHttps) "https://" else "http://") + b.urlHost + b.urlPath)
+                .headers(Headers.headersOf(*b.requestHeaders.flatMap { listOf(it.name, it.value) }.toTypedArray()))
+                .put(body.toRequestBody()).build()
+            http.newCall(req).execute().use { r -> if (!r.isSuccessful) { fileOk = false; log("upload $rel: HTTP ${r.code}") } }
+        }
+        val committed = s.cloud.commitFileUpload(fileOk, APP_ID, unhex(sha), ROOT + rel).get()
+        if (!fileOk || !committed) ok = false else log("pushed $rel")
+    }
+    s.cloud.completeAppUploadBatch(APP_ID, batch.batchID, if (ok) EResult.OK else EResult.Fail).get()
+    if (!ok) die("some uploads failed; cloud batch marked failed, local saves untouched")
+    state.changeNumber = batch.appChangeNumber
+    state.files.clear()
+    state.files.putAll(cloudSha - toDelete.toSet() + changed)
+    toDelete.forEach { log("deleted from cloud $it") }
+    saveState(state)
+    log("push done: ${changed.size} uploaded, ${toDelete.size} deleted, change ${batch.appChangeNumber}")
 }
 
 fun main(argv: Array<String>) {

@@ -71,18 +71,31 @@ object WmCloud {
     @JvmStatic @Throws(WmCloudException::class)
     fun downloadGame(dest: File, onProgress: Consumer<Float>) = wmcloud.downloadGame(dest) { onProgress.accept(it) }
 
-    /** Wildermyth DLC app IDs the account owns, straight from Steam. */
+    /**
+     * Before a session, over one Steam connection: pulls saves, then asks which DLC the account owns.
+     * Returns the owned DLC app IDs, or null if only that check failed; the caller keeps its last answer.
+     */
     @JvmStatic @Throws(WmCloudException::class)
-    fun ownedDlc(): List<Int> = ownedApps(DLC_APP_IDS)
+    fun beforePlay(game: File): List<Int>? = Session(false).use { s ->
+        wmcloud.pull(s, game, false)
+        try { ownedApps(s, DLC_APP_IDS) } catch (e: Exception) { log("DLC check failed: $e"); null }
+    }
+
+    /** After a session, over one Steam connection: pushes saves, then achievements, which can wait a session. */
+    @JvmStatic @Throws(WmCloudException::class)
+    fun afterPlay(game: File) {
+        val store = StoreStatsHandler()
+        Session(false, listOf(store)).use { s ->
+            wmcloud.push(s, game, false)
+            try { achievements(s, store, game, true, false) } catch (e: Exception) { log("achievements: $e") }
+        }
+    }
 
     @JvmStatic @Throws(WmCloudException::class)
     fun pull(game: File, force: Boolean) = wmcloud.pull(game, force)
 
     @JvmStatic @Throws(WmCloudException::class)
     fun push(game: File, force: Boolean) = wmcloud.push(game, force)
-
-    @JvmStatic @Throws(WmCloudException::class)
-    fun syncAchievements(game: File) = achievements(game, true, false)
 
     /** QR modules for [text], true = dark, so the app can draw it without its own QR library. */
     @JvmStatic fun qrMatrix(text: String): Array<BooleanArray> {
