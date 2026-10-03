@@ -1,6 +1,6 @@
 ![Wildermyth on Android](docs/banner.png)
 
-**v0.3** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
+**v0.4** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
 Not affiliated with Worldwalker Games or Valve.
 
 > [!IMPORTANT]
@@ -80,6 +80,8 @@ game's own art. Tap anything there; the controller keeps driving the game.
   the campaign move to the bottom screen, drawn with the game's own art, and the map gets the whole top
   screen.
 - **Touch and controller together.** The game keeps its controller prompts while you tap the screen.
+- **Updates itself.** When a new version is out, the app offers to download and install it (Android asks
+  you to confirm). Switch it off with "Updates" on the setup screen.
 
 Tested on the AYN Thor (Snapdragon 8 Gen 2, Android 13). Other Android handhelds with a Snapdragon chip may
 work, but haven't been tested.
