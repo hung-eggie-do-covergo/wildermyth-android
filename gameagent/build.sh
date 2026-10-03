@@ -7,8 +7,8 @@ G=${WILDERMYTH_DIR:?set WILDERMYTH_DIR to a Wildermyth install}
 C=amethyst/app_pojavlauncher/src/main/assets/components/wildermyth
 O=$(mktemp -d)
 javac --release 8 -nowarn -d "$O" -cp "$G/wildermyth.jar:$G/lib/*" \
-  dlcagent/src/wildermyth/*.java
-jar cfm dlcagent/wm-dlcagent.jar dlcagent/manifest.txt -C "$O" .
+  gameagent/src/wildermyth/*.java
+jar cfm gameagent/wm-gameagent.jar gameagent/manifest.txt -C "$O" .
 rm -rf "$O"
-cp dlcagent/wm-dlcagent.jar $C/
-(cd $C && cat libgdx.so libgdx-freetype.so libjamepad.so libfmodJNI.so wm-fmodloader.jar wm-dlcagent.jar | shasum | cut -c1-12 > version)
+cp gameagent/wm-gameagent.jar $C/
+(cd $C && cat libgdx.so libgdx-freetype.so libjamepad.so libfmodJNI.so wm-fmodloader.jar wm-gameagent.jar | shasum | cut -c1-12 > version)

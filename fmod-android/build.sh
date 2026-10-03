@@ -20,4 +20,4 @@ done
 $N/aarch64-linux-android21-clang -shared -fPIC -O2 -w -I $F/lowlevel/inc -I $F/studio/inc \
   fmod_wrap_android.c onload.c -Lstubs -lfmod -lfmodstudio -o libfmodJNI.so
 cp libfmodJNI.so $C/
-(cd $C && cat libgdx.so libgdx-freetype.so libjamepad.so libfmodJNI.so wm-fmodloader.jar wm-dlcagent.jar | shasum | cut -c1-12 > version)
+(cd $C && cat libgdx.so libgdx-freetype.so libjamepad.so libfmodJNI.so wm-fmodloader.jar wm-gameagent.jar | shasum | cut -c1-12 > version)

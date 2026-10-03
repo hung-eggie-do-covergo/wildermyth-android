@@ -8,32 +8,40 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Tells the game which DLC Steam says the account owns. The game asks the Steam client, which does not
- * exist on Android, and caches the answer in a static Boolean; pre-filling that cache with the app's
- * Steam-verified answer (-Dwm.ownedDlc=id,id) makes it skip its own check. Unowned DLC is left alone.
+ * The app's agent in the game's JVM (-javaagent): owned DLC, controller mode on a touchscreen, the second
+ * screen (DualScreen), and a thread dump on request. Each part fails on its own, never the game.
  */
-public final class DlcAgent {
+public final class GameAgent {
     private static final String CONTEXT = "com.worldwalkergames.legacy.server.context.ServerDataContext";
 
     public static void premain(String args) {
+        ownedDlc();
+        threadDumpOnRequest();
+        try {
+            ControllerMode.start();
+        } catch (Throwable t) {
+            System.err.println("GameAgent: controller mode not pinned: " + t);
+        }
+        try {
+            DualScreen.start();
+        } catch (Throwable t) {
+            System.err.println("GameAgent: no second screen: " + t); // e.g. a game update renamed a class
+        }
+    }
+
+    /**
+     * Tells the game which DLC Steam says the account owns. The game asks the Steam client, which does not
+     * exist on Android, and caches the answer in a static Boolean; pre-filling that cache with the app's
+     * Steam-verified answer (-Dwm.ownedDlc=id,id) makes it skip its own check. Unowned DLC is left alone.
+     */
+    private static void ownedDlc() {
         List<String> owned = Arrays.asList(System.getProperty("wm.ownedDlc", "").split(","));
         try {
             Class<?> c = Class.forName(CONTEXT, true, ClassLoader.getSystemClassLoader());
             if (owned.contains("2935580")) set(c, "isDLCInstalledOmenroad");
             if (owned.contains("2139130")) set(c, "isDLCInstalledArmorsAndSkins");
         } catch (Throwable t) {
-            System.err.println("DlcAgent: could not apply owned DLC: " + t);
-        }
-        threadDumpOnRequest();
-        try {
-            ControllerMode.start();
-        } catch (Throwable t) {
-            System.err.println("DlcAgent: controller mode not pinned: " + t);
-        }
-        try {
-            DualScreen.start();
-        } catch (Throwable t) {
-            System.err.println("DlcAgent: no second screen: " + t); // e.g. a game update renamed a class
+            System.err.println("GameAgent: could not apply owned DLC: " + t);
         }
     }
 
@@ -69,6 +77,6 @@ public final class DlcAgent {
         Field f = c.getDeclaredField(field);
         f.setAccessible(true);
         f.set(null, Boolean.TRUE);
-        System.out.println("DlcAgent: " + field + " = true (owned on Steam)");
+        System.out.println("GameAgent: " + field + " = true (owned on Steam)");
     }
 }

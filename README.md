@@ -76,7 +76,7 @@ sound).
 | `wmcloud/` | Steam in Kotlin: QR sign-in, Steam Cloud pull/push with conflict and mass-delete guards, achievements, DLC ownership, and the game download. |
 | `jamepad-android/` | Android build of Jamepad, the game's controller library, over the app's SDL. |
 | `fmod-android/` | Android build of the game's FMOD Java bridge, attaching FMOD's threads to ART. |
-| `dlcagent/` | A Java agent in the game: it answers the game's DLC checks from Steam-verified ownership, and draws HUD panels for the second screen. |
+| `gameagent/` | The app's Java agent inside the game: it answers the game's DLC checks from Steam-verified ownership, keeps controller mode on for touch, and draws HUD panels and the map for the second screen. |
 
 ## Status and limits
 
@@ -94,8 +94,8 @@ for Android from [fmod.com](https://www.fmod.com/download).
 ```sh
 export ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/27.3.13750724   # your NDK r27
 export FMOD_SDK=~/fmodstudioapi11012android/api                     # the SDK's api/ directory
-export WILDERMYTH_DIR=~/wildermyth                                  # a game install, for dlcagent to compile against
-jamepad-android/build.sh && fmod-android/build.sh && dlcagent/build.sh  # optional: prebuilt copies are in the app
+export WILDERMYTH_DIR=~/wildermyth                                  # a game install, for gameagent to compile against
+jamepad-android/build.sh && fmod-android/build.sh && gameagent/build.sh  # optional: prebuilt copies are in the app
 cd amethyst && ./gradlew :app_pojavlauncher:assembleRelease
 ```
 
@@ -129,7 +129,7 @@ Wildermyth and its art belong to Worldwalker Games. None of the game's files shi
 
 ## License
 
-This repository's own code (`wmcloud/`, `dlcagent/`, `jamepad-android/`, `fmod-android/` scripts and sources)
+This repository's own code (`wmcloud/`, `gameagent/`, `jamepad-android/`, `fmod-android/` scripts and sources)
 is [MIT](LICENSE). The app in `amethyst/` is a fork of Amethyst-Android and stays under the
 [LGPL-3.0](https://github.com/AngelAuraMC/Amethyst-Android/blob/v3_openjdk/LICENSE). Bundled third-party
 components keep their own licences: FMOD under FMOD's EULA, fmod-jni under Apache-2.0

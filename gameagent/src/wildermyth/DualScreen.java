@@ -88,6 +88,7 @@ final class DualScreen {
     private static final Pattern TOUCH = Pattern.compile("\"touch\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d)\\s*,\\s*([0-9.]+)\\s*,\\s*([0-9.]+)");
     private static final Pattern SHEET_TAB = Pattern.compile("\"sheetTab\"\\s*:\\s*(\\d+)");
     private static final Pattern SHEET_VIEW = Pattern.compile("\"sheetView\"\\s*:\\s*(\\d+)");
+    private static final Pattern MAP_TAP = Pattern.compile("\"mapTap\"\\s*:\\s*(\\d+)");
     private static final Pattern VISIBLE = Pattern.compile("\"visible\"\\s*:\\s*(\\d+)");
     private static final Pattern BAR_SIZE = Pattern.compile("\"barSize\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d+)");
     private static final Pattern SHEET_SIZE = Pattern.compile("\"sheetSize\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d+)");
@@ -135,6 +136,7 @@ final class DualScreen {
         }
     };
     private Sheet sheet;
+    private final OverviewMap map = new OverviewMap();
 
     /** The selection tooltip (top right in the HUD) opens from the hero's name on the panel now. */
     private static void hideSelectionTooltip(Hud hud) {
@@ -176,6 +178,7 @@ final class DualScreen {
                 DataOutputStream out = new DataOutputStream(s.getOutputStream());
                 lastState = "";
                 java.util.Arrays.fill(lastSum, -1); // a new panel has none of our frames
+                post(map::reset);
                 connected = true;
                 Thread reader = new Thread(() -> read(s), "wm-dualscreen-in");
                 reader.setDaemon(true);
@@ -244,6 +247,11 @@ final class DualScreen {
                 if (m.find()) {
                     int v = Integer.parseInt(m.group(1));
                     post(() -> { if (sheet != null) sheet.showDetail(v); });
+                }
+                m = MAP_TAP.matcher(line);
+                if (m.find()) {
+                    int tile = Integer.parseInt(m.group(1));
+                    post(() -> map.tap(tile));
                 }
                 m = VISIBLE.matcher(line);
                 if (m.find()) {
@@ -336,6 +344,7 @@ final class DualScreen {
             if (hud.topBar != null) sheet.bar.setSize(hud.topBar.getWidth(), hud.topBar.getHeight());
             sheet.fit(sheetW, sheetH);
             sheet.update(hud.domain);
+            map.update(hud.domain, this::send);
         }
         String sheetState = hud == null ? null : sheet.state();
         String selected = hud == null ? null : selectedCard(hud);
@@ -557,6 +566,7 @@ final class DualScreen {
         if (!outbox.offer(msg)) { // a stalled panel resyncs instead of lagging behind
             outbox.clear();
             lastState = "";
+            map.reset();
         }
     }
 
