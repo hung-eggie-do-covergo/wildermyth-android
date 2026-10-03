@@ -1,6 +1,6 @@
 ![Wildermyth on Android](docs/banner.png)
 
-**v0.1** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
+**v0.3** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
 Not affiliated with Worldwalker Games or Valve.
 
 > [!IMPORTANT]
@@ -21,7 +21,7 @@ Not affiliated with Worldwalker Games or Valve.
 
 **Questions or bugs?** [Open an issue](https://github.com/hung-eggie-do-covergo/wildermyth-android/issues).
 
-[Features](#features) · [Pictures](#pictures) · [How it works](#how-it-works) ·
+[Features](#features) · [Pictures](#pictures) · [Dual-Screen](#dual-screen) · [How it works](#how-it-works) ·
 [Status and limits](#status-and-limits) · [Building](#building) · [Credits](#credits) · [License](#license)
 
 ## TL;DR
@@ -47,6 +47,24 @@ yet, give it a try: it's on [Steam](https://store.steampowered.com/app/763890/Wi
 | **Both sides changed: you choose** | **Battle, with controller prompts** |
 | ![Saves differ: keep this device or use Steam Cloud; the other copy is backed up](docs/conflict.jpeg) | ![A tactical battle on the Thor, with the game's controller hints](docs/battle.jpeg) |
 
+## Dual-Screen
+
+On a dual-screen handheld like the Thor, turn on **Dual screen** in the setup screen (top right). The map
+gets the whole top screen; your heroes and everything about them move to the bottom one, drawn with the
+game's own art. Tap anything there; the controller keeps driving the game.
+
+| Hero sheet | Hero card (tap the name) | Selected tile |
+|---|---|---|
+| ![The selected hero's abilities on the bottom screen, the map on top](docs/ds-sheet.jpeg) | ![The hero's card dropping down from their name](docs/ds-herocard.jpeg) | ![A selected tile's card: its site and who occupies it](docs/ds-tile.jpeg) |
+| **Overview map** | **Threats** | **Message log** |
+| ![The campaign map: terrain, fog, threat coins, your parties and the camera frame](docs/ds-map.jpeg) | ![The threats column shown over the sheet](docs/ds-threats.jpeg) | ![The game's message log over the bottom screen](docs/ds-log.jpeg) |
+
+- **Hero sheet:** abilities, gear, stats, combat, relationships and aspects, one column at a time, sized for
+  fingers. Tap an entry for its details.
+- **Overview map:** the whole campaign at a glance, with fog of war, threats and your parties. Pinch, drag,
+  and tap a tile to fly the camera there.
+- **Threats** and the **message log** open over the bottom screen when you want them.
+
 ## Features
 
 - **Install the game from the app.** Pick your own game files, or sign in to Steam and download the game
@@ -58,8 +76,10 @@ yet, give it a try: it's on [Steam](https://store.steampowered.com/app/763890/Wi
 - **DLC** you own on Steam is unlocked.
 - **Controller and sound** work out of the box.
 - **Dual screens.** On handhelds with a second screen, like the Thor, turn on "Dual screen" in the setup
-  screen: your heroes, their character sheets, the selected tile and the message log move to the bottom
-  screen, drawn by the game itself, and the map gets the whole top screen.
+  screen: your heroes, their character sheets, the selected tile, the message log and an overview map of
+  the campaign move to the bottom screen, drawn with the game's own art, and the map gets the whole top
+  screen.
+- **Touch and controller together.** The game keeps its controller prompts while you tap the screen.
 
 Tested on the AYN Thor (Snapdragon 8 Gen 2, Android 13). Other Android handhelds with a Snapdragon chip may
 work, but haven't been tested.
