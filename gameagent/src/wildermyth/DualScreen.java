@@ -344,7 +344,7 @@ final class DualScreen {
             if (hud.topBar != null) sheet.bar.setSize(hud.topBar.getWidth(), hud.topBar.getHeight());
             sheet.fit(sheetW, sheetH);
             sheet.update(hud.domain);
-            map.update(hud.domain, this::send);
+            map.update(hud.domain, this::send, outbox::offer);
         }
         String sheetState = hud == null ? null : sheet.state();
         String selected = hud == null ? null : selectedCard(hud);

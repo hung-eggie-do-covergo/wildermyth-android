@@ -27,9 +27,12 @@ final class OverviewMap {
     /** Tiles in the order the panel numbers them. */
     private final Array<OverlandTile> tiles = new Array<>();
     private String lastState = "";
+    private final MapCoins coins = new MapCoins();
+    private java.util.function.Predicate<byte[]> sendImage;
 
     /** Sends the geometry for a new campaign, then the state when it changes. */
-    void update(ClientCampaignDomain d, Consumer<String> send) {
+    void update(ClientCampaignDomain d, Consumer<String> send, java.util.function.Predicate<byte[]> sendImage) {
+        this.sendImage = sendImage;
         if (d != domain) {
             domain = d;
             lastState = "";
@@ -45,6 +48,7 @@ final class OverviewMap {
     /** Forces a resend, e.g. for a panel that just connected. */
     void reset() {
         domain = null;
+        coins.reset();
     }
 
     private String geometry(EntitiesCollection entities) {
@@ -106,18 +110,27 @@ final class OverviewMap {
         for (int i = 0; i < tiles.size; i++) {
             if (vis.charAt(i) == 'h') continue;
             OverlandTile t = tiles.get(i);
-            int heroes = t.filterContents(Hero.class).size;
+            Array<Hero> heroList = t.filterContents(Hero.class);
+            int heroes = heroList.size;
             Array<Site> sites = t.filterContents(Site.class);
-            int threats = t.filterContents(Threat.class).size;
+            Array<Threat> threatList = t.filterContents(Threat.class);
+            int threats = threatList.size;
             if (heroes == 0 && sites.size == 0 && threats == 0) continue;
             if (b.length() > 1) b.append(',');
             b.append("{\"i\":").append(i);
-            if (heroes > 0) b.append(",\"h\":").append(heroes);
-            if (threats > 0) b.append(",\"t\":").append(threats);
+            if (heroes > 0) b.append(",\"h\":").append(heroes).append(",\"hc\":")
+                    .append(DualScreen.quote(coins.hero(domain.dependencies, heroList.first().getParentEntity(), sendImage)));
+            if (threats > 0) b.append(",\"t\":").append(threats).append(",\"tc\":")
+                    .append(DualScreen.quote(coins.threat(domain.dependencies, threatList.first(), sendImage)));
             if (sites.size > 0) {
                 Site site = sites.first();
                 b.append(",\"s\":").append(DualScreen.quote(domain.dependencies.gameStrings.bestName(entities, site.id())));
-                if (site.lurkingThreat != null) b.append(",\"x\":1");
+                if (site.lurkingThreat != null) {
+                    b.append(",\"x\":1");
+                    Threat lurking = Threat.byId(entities, site.lurkingThreat);
+                    if (lurking != null)
+                        b.append(",\"tc\":").append(DualScreen.quote(coins.threat(domain.dependencies, lurking, sendImage)));
+                }
             }
             b.append('}');
         }
