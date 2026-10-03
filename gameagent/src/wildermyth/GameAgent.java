@@ -23,6 +23,11 @@ public final class GameAgent {
             System.err.println("GameAgent: controller mode not pinned: " + t);
         }
         try {
+            FocusBridge.start();
+        } catch (Throwable t) {
+            System.err.println("GameAgent: no focus bridge: " + t);
+        }
+        try {
             DualScreen.start();
         } catch (Throwable t) {
             System.err.println("GameAgent: no second screen: " + t); // e.g. a game update renamed a class
