@@ -786,7 +786,7 @@ final class DualScreen {
         }
     }
 
-    private static String quote(String s) {
+    static String quote(String s) {
         StringBuilder b = new StringBuilder("\"");
         for (char c : s.toCharArray()) {
             if (c == '"' || c == '\\') b.append('\\').append(c);

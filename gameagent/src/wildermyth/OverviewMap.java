@@ -1,11 +1,16 @@
 package wildermyth;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 import com.worldwalkergames.engine.EID;
 import com.worldwalkergames.engine.EntitiesCollection;
 import com.worldwalkergames.legacy.game.campaign.ClientCampaignDomain;
 import com.worldwalkergames.legacy.game.campaign.components.WorldMapCamera;
+import com.worldwalkergames.legacy.game.campaign.model.Hero;
+import com.worldwalkergames.legacy.game.campaign.model.Site;
+import com.worldwalkergames.legacy.game.campaign.model.Threat;
 import com.worldwalkergames.legacy.game.common.UISelectionState;
 import com.worldwalkergames.legacy.game.world.model.OverlandTile;
 import com.worldwalkergames.legacy.game.world.model.TileContents;
@@ -88,7 +93,50 @@ final class OverviewMap {
         EID sel = UISelectionState.in(entities).selectedEntity();
         int selected = -1;
         for (int i = 0; sel != null && i < tiles.size; i++) if (sel.equals(tiles.get(i).id())) selected = i;
-        return "{\"mapState\":{\"vis\":\"" + vis + "\",\"sel\":" + selected + "}}";
+        return "{\"mapState\":{\"vis\":\"" + vis + "\",\"sel\":" + selected + ",\"marks\":" + marks(entities, vis)
+                + ",\"view\":" + view() + "}}";
+    }
+
+    /**
+     * What is on each tile the player can see: how many heroes, the site's name and whether a threat
+     * lurks there, and threats on the move. Hidden tiles report nothing, as in the game.
+     */
+    private String marks(EntitiesCollection entities, CharSequence vis) {
+        StringBuilder b = new StringBuilder("[");
+        for (int i = 0; i < tiles.size; i++) {
+            if (vis.charAt(i) == 'h') continue;
+            OverlandTile t = tiles.get(i);
+            int heroes = t.filterContents(Hero.class).size;
+            Array<Site> sites = t.filterContents(Site.class);
+            int threats = t.filterContents(Threat.class).size;
+            if (heroes == 0 && sites.size == 0 && threats == 0) continue;
+            if (b.length() > 1) b.append(',');
+            b.append("{\"i\":").append(i);
+            if (heroes > 0) b.append(",\"h\":").append(heroes);
+            if (threats > 0) b.append(",\"t\":").append(threats);
+            if (sites.size > 0) {
+                Site site = sites.first();
+                b.append(",\"s\":").append(DualScreen.quote(domain.dependencies.gameStrings.bestName(entities, site.id())));
+                if (site.lurkingThreat != null) b.append(",\"x\":1");
+            }
+            b.append('}');
+        }
+        return b.append(']').toString();
+    }
+
+    /** What the main screen shows, as the four ground points under its corners. */
+    private String view() {
+        WorldMapCamera camera = WorldMapCamera.any(domain.entities);
+        if (camera == null) return "null";
+        float w = Gdx.graphics.getWidth(), h = Gdx.graphics.getHeight();
+        StringBuilder b = new StringBuilder("[");
+        float[][] corners = {{0, 0}, {w, 0}, {w, h}, {0, h}};
+        Vector3 out = new Vector3();
+        for (int k = 0; k < 4; k++) {
+            camera.screenToWorld(corners[k][0], corners[k][1], out);
+            b.append(k > 0 ? "," : "").append(String.format(Locale.US, "%.1f,%.1f", out.x, out.y));
+        }
+        return b.append(']').toString();
     }
 
     /** A tap on tile {@code i}: select it and fly the main camera there, as a click on the map would. */
