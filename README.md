@@ -1,6 +1,6 @@
 ![Wildermyth on Android](docs/banner.png)
 
-**v0.4** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
+**v0.5** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
 Not affiliated with Worldwalker Games or Valve.
 
 > [!IMPORTANT]
@@ -63,6 +63,13 @@ game; the bottom screen is for touch.
 - Overview map: terrain, fog of war, threats and your heroes. Pinch to zoom, drag to pan, tap a tile to
   move the camera there.
 - Threats and the message log open with the buttons at the top.
+
+In battle, the bottom screen shows the card for whatever the cursor points at, or the selected hero's sheet
+("Sheet"). Undo and Retreat sit above the heroes.
+
+| Info | Sheet | Threats |
+|---|---|---|
+| ![The card for what the cursor points at, full width on the bottom screen](docs/ds-battle-info.jpeg) | ![The hero sheet during a battle](docs/ds-battle-sheet.jpeg) | ![The foes' column shown over the card](docs/ds-battle-threats.jpeg) |
 
 ## Features
 

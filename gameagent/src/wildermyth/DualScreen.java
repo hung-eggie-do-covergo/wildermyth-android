@@ -7,6 +7,9 @@ import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.GL30;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.g2d.Batch;
+import com.badlogic.gdx.graphics.glutils.ShaderProgram;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.worldwalkergames.legacy.render.componentrenderers.EnvironmentRenderContext;
 import com.badlogic.gdx.graphics.glutils.FrameBuffer;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
@@ -24,6 +27,7 @@ import com.worldwalkergames.legacy.game.common.UISelectionState;
 import com.worldwalkergames.legacy.game.common.ui.EntityTooltip;
 import com.worldwalkergames.legacy.game.mission.ui.BaseBar;
 import com.worldwalkergames.legacy.game.mission.ui.PortraitCard;
+import com.worldwalkergames.legacy.game.model.Controlled;
 import com.worldwalkergames.legacy.game.model.Individual;
 import com.worldwalkergames.legacy.options.InterfaceOptions;
 import com.worldwalkergames.legacy.ui.detail.AbilitiesDetails;
@@ -38,7 +42,11 @@ import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Pools;
 import com.badlogic.gdx.utils.ScreenUtils;
+import com.worldwalkergames.engine.EntitiesCollection;
+import com.worldwalkergames.legacy.game.api.ViewClientAPI;
+import com.worldwalkergames.legacy.game.mission.ClientMissionDomain;
 import com.worldwalkergames.legacy.LegacyDesktop;
+import com.worldwalkergames.ui.popup.PopUpManager;
 import com.worldwalkergames.legacy.context.ClientDataContext;
 import com.worldwalkergames.legacy.control.ClientContext;
 import com.worldwalkergames.legacy.game.campaign.ClientCampaignDomain;
@@ -82,7 +90,7 @@ final class DualScreen {
     private static final int SCALE = 2;
     /** Widget ids shared with the panel. */
     private static final int ROSTER = 0, CONSOLE = 1, CONSOLE_TOGGLE = 2, THREATS = 3, SHEET = 4, STATUS = 5,
-            PLACE = 6, BAR = 7, COUNT = 8;
+            PLACE = 6, BAR = 7, UNDO = 8, RETREAT = 9, HOVER = 10, COUNT = 11;
     private static final float ROSTER_MARGIN = 24;
     private static final Pattern TAP = Pattern.compile("\"tap\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*([0-9.]+)\\s*,\\s*([0-9.]+)");
     private static final Pattern TOUCH = Pattern.compile("\"touch\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d)\\s*,\\s*([0-9.]+)\\s*,\\s*([0-9.]+)");
@@ -132,7 +140,7 @@ final class DualScreen {
             hud.moveOut(consoleW / (float) SCALE, consoleH / (float) SCALE);
             hideSelectionTooltip(hud);
             // A one-frame flag: catch it here, every frame; the sheet rebuilds on the next tick.
-            if (UISelectionState.in(hud.domain.entities).stateHasChanged) sheet.dirty = true;
+            if (UISelectionState.in(hud.game.entities).stateHasChanged) sheet.dirty = true;
         }
     };
     private Sheet sheet;
@@ -141,7 +149,7 @@ final class DualScreen {
     /** The selection tooltip (top right in the HUD) opens from the hero's name on the panel now. */
     private static void hideSelectionTooltip(Hud hud) {
         try {
-            Object tip = field(hud.domain.dependencies.tooltipManager, "currentTip");
+            Object tip = field(hud.game.deps.tooltipManager, "currentTip");
             if (tip instanceof EntityTooltip) ((Actor) tip).setVisible(false);
         } catch (ReflectiveOperationException ignored) {
             // no tooltip manager we know: leave it
@@ -152,10 +160,11 @@ final class DualScreen {
     private Hud find() {
         Hud h = Hud.find();
         if (h == null) return null;
-        if (sheet == null || sheet.domain != h.domain) sheet = new Sheet(h.domain);
+        if (sheet == null || sheet.game.deps != h.game.deps || sheet.game.entities != h.game.entities) sheet = new Sheet(h.game);
         h.sheet = sheet.table;
         h.status = sheet.status;
         h.place = sheet.place;
+        h.hover = sheet.hoverShown ? sheet.hover : null; // nothing hovered: an empty frame clears the panel's card
         h.bar = sheet.bar;
         return h;
     }
@@ -299,29 +308,6 @@ final class DualScreen {
         });
     }
 
-    /** The selected hero's card as fractions {left, top, right, bottom} of the roster image; null if none. */
-    private String selectedCard(Hud hud) {
-        EID sel = UISelectionState.in(hud.domain.entities).selectedEntity();
-        if (sel == null || !(hud.roster instanceof Group)) return null;
-        float[] r = area(hud.roster, ROSTER);
-        Array<Actor> cards = ((Group) hud.roster).getChildren();
-        for (int i = 0; i < cards.size; i++) {
-            Actor c = cards.get(i);
-            if (!(c instanceof PortraitCard) || !sel.equals(((PortraitCard) c).getEntityId())) continue;
-            ((PortraitCard) c).validate(); // its layout slides the portrait (active vs not); bring it up to date
-            try { // the portrait as drawn: out-of-action heroes are shifted off their slot
-                c = (Actor) field(c, "portraitButton");
-            } catch (ReflectiveOperationException ignored) {
-                // the slot will do
-            }
-            Vector2 lo = c.localToStageCoordinates(new Vector2(0, 0));
-            float x0 = (lo.x - r[0]) / r[2], x1 = (lo.x + c.getWidth() - r[0]) / r[2];
-            float y0 = 1 - (lo.y + c.getHeight() - r[1]) / r[3], y1 = 1 - (lo.y - r[1]) / r[3];
-            return String.format(java.util.Locale.US, "[%.4f,%.4f,%.4f,%.4f]", x0, y0, x1, y1);
-        }
-        return null;
-    }
-
     /** Keeps the moved widgets out of the HUD while connected, and gives them back when not. */
     private void snapshot() {
         Hud hud = find();
@@ -339,18 +325,19 @@ final class DualScreen {
             if (!root.getChildren().contains(sheet.table, true)) root.addActor(sheet.table);
             if (!root.getChildren().contains(sheet.status, true)) root.addActor(sheet.status);
             if (!root.getChildren().contains(sheet.place, true)) root.addActor(sheet.place);
+            if (!root.getChildren().contains(sheet.hover, true)) root.addActor(sheet.hover);
             if (!root.getChildren().contains(sheet.bar, true)) root.addActor(sheet.bar);
             // At the HUD's own size, so its pattern is the HUD's; area() crops a piece the header's shape.
             if (hud.topBar != null) sheet.bar.setSize(hud.topBar.getWidth(), hud.topBar.getHeight());
             sheet.fit(sheetW, sheetH);
-            sheet.update(hud.domain);
-            map.update(hud.domain, this::send, outbox::offer);
+            sheet.update(hud.game);
+            if (hud.game.campaign != null) map.update(hud.game.campaign, this::send, outbox::offer);
         }
         String sheetState = hud == null ? null : sheet.state();
-        String selected = hud == null ? null : selectedCard(hud);
-        String state = hud == null ? "{\"campaign\":false}"
-                : "{\"campaign\":true,\"console\":" + hud.consoleShown() + (sheetState == null ? "" : ",\"sheet\":" + sheetState)
-                + (selected == null ? "" : ",\"selectedCard\":" + selected) + "}";
+        // A story event or other popup over the map: the bottom screen rests (idle logo) until it closes.
+        String state = hud == null || hud.popupOpen() ? "{\"campaign\":false}"
+                : "{\"campaign\":true,\"battle\":" + (hud.game.campaign == null) + ",\"console\":" + hud.consoleShown() + (sheetState == null ? "" : ",\"sheet\":" + sheetState)
+                + "}";
         if (!state.equals(lastState)) {
             lastState = state;
             send(state);
@@ -378,6 +365,9 @@ final class DualScreen {
         Gdx.gl = Gdx.gl20 = scaled;
         if (gl30 != null && scaled instanceof GL30) Gdx.gl30 = (GL30) scaled;
         fbo.begin();
+        // Battle portraits render through buffers of their own, whose end() rebinds "the screen":
+        // make that our buffer while we capture, or the rest of the portrait lands on the real screen.
+        int[] screens = redirectScreen(fbo.getFramebufferHandle());
         try {
             Actor[] widgets = hud.widgets();
             int shown = visible;
@@ -396,7 +386,11 @@ final class DualScreen {
                 }
                 Gdx.gl.glClearColor(0, 0, 0, 0);
                 Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+                float alpha = widgets[id].getColor().a; // battle widgets are kept transparent in the HUD
+                widgets[id].getColor().a = 1;
+                if (id == ROSTER && hud.portraitBackdrops != null) draw(hud.portraitBackdrops, stage); // selection sparkle
                 draw(widgets[id], stage);
+                widgets[id].getColor().a = alpha;
                 byte[] px = ScreenUtils.getFrameBufferPixels(r[0], r[1], r[2], r[3], true);
                 crc.reset();
                 crc.update(px, 0, px.length);
@@ -412,6 +406,7 @@ final class DualScreen {
                 outbox.offer(msg); // frames are droppable
             }
         } finally {
+            restoreScreen(screens);
             fbo.end();
             Gdx.gl = gl;
             Gdx.gl20 = gl20;
@@ -419,9 +414,44 @@ final class DualScreen {
         }
     }
 
+    /** The framebuffer classes whose end() binds a static "default" framebuffer: the game's and libGDX's. */
+    private static final String[] SCREEN_HOLDERS = {"com.worldwalkergames.legacy.render.NiceFrameBuffer",
+            "com.badlogic.gdx.graphics.glutils.GLFrameBuffer"};
+
+    /** Points each holder's default framebuffer at {@code handle}; returns the old values (-1: not found). */
+    private static int[] redirectScreen(int handle) {
+        int[] old = new int[SCREEN_HOLDERS.length];
+        for (int i = 0; i < SCREEN_HOLDERS.length; i++) {
+            try {
+                Field f = Class.forName(SCREEN_HOLDERS[i]).getDeclaredField("defaultFramebufferHandle");
+                f.setAccessible(true);
+                old[i] = f.getInt(null);
+                f.setInt(null, handle);
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                old[i] = -1;
+            }
+        }
+        return old;
+    }
+
+    private static void restoreScreen(int[] old) {
+        for (int i = 0; i < SCREEN_HOLDERS.length; i++) {
+            if (old[i] < 0) continue;
+            try {
+                Field f = Class.forName(SCREEN_HOLDERS[i]).getDeclaredField("defaultFramebufferHandle");
+                f.setAccessible(true);
+                f.setInt(null, old[i]);
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+                // nothing to restore
+            }
+        }
+    }
+
     /** One widget the way its parent would draw it: the HUD's multi-pass order, or plain scene2d. */
     private static void draw(Actor a, Stage stage) {
         Batch batch = stage.getBatch();
+        ShaderProgram shader = batch.getShader();
+        batch.setShader(null); // a story screen can leave its own (e.g. distance-field text) shader on the shared batch
         batch.setProjectionMatrix(stage.getCamera().combined);
         batch.setColor(1, 1, 1, 1);
         batch.begin();
@@ -430,10 +460,16 @@ final class DualScreen {
             d.draw_step1_background(batch, 1);
             d.draw_step2_misc(batch, 1);
             d.draw_step3_text(batch, 1);
-        } else {
+        } else { // a plain actor draws at its parent's coordinates: put it where it is on the stage
+            Vector2 p = a.getParent() == null ? new Vector2(a.getX(), a.getY())
+                    : a.getParent().localToStageCoordinates(new Vector2(a.getX(), a.getY()));
+            float x = a.getX(), y = a.getY();
+            a.setPosition(p.x, p.y);
             a.draw(batch, 1);
+            a.setPosition(x, y);
         }
         batch.end();
+        batch.setShader(shader);
     }
 
     /** {@code gl} with glScissor's rectangle multiplied by SCALE; every other call passes straight through. */
@@ -507,7 +543,7 @@ final class DualScreen {
         Hud hud = find();
         Stage stage = hud == null ? null : hud.roster.getStage();
         Actor a = stage == null || id < 0 || id >= COUNT ? null : hud.widgets()[id];
-        if (a == null || !hud.domain.dependencies.popUpManager.isEmpty()) return;
+        if (a == null || hud.popupOpen()) return;
         if (id == CONSOLE_TOGGLE) {
             hud.toggleConsole();
             return;
@@ -522,8 +558,8 @@ final class DualScreen {
         if (id == THREATS) { // the HUD ignores clicks on threats; Ctrl+F1..F4 select them: do that
             for (Actor c = target; c != null && c != a; c = c.getParent())
                 if (c instanceof PortraitCard) {
-                    UISelectionState.in(hud.domain.entities).selectEntity(((PortraitCard) c).getEntityId());
-                    hud.domain.api.stopTime();
+                    UISelectionState.in(hud.game.entities).selectEntity(((PortraitCard) c).getEntityId());
+                    hud.game.api.stopTime();
                     break;
                 }
         } else if (target != null) {
@@ -578,7 +614,7 @@ final class DualScreen {
         Hud hud = find();
         Stage stage = hud == null ? null : hud.roster.getStage();
         Actor a = stage == null || id < 0 || id >= COUNT ? null : hud.widgets()[id];
-        if (a == null || !hud.domain.dependencies.popUpManager.isEmpty()) return;
+        if (a == null || hud.popupOpen()) return;
         float[] r = area(a, id);
         float sx = r[0] + fx * r[2], sy = r[1] + (1 - fy) * r[3];
         // Straight to the widget, like tap(): moving the stage's pointer would unhover the HUD's
@@ -610,7 +646,7 @@ final class DualScreen {
                 "characterSheet.aspectsTab"};
         /** Width of the two-column panel in stage units; each column is about half. */
         private static final float WIDTH = 1060;
-        final ClientCampaignDomain domain;
+        final Game game;
         final Table table;
         private final LegacyViewDependencies deps;
         private final DetailsPanel[] panels;
@@ -618,6 +654,10 @@ final class DualScreen {
         final EntityTooltip status;
         /** While a tile, site or threat is selected, its card (the same tooltip) replaces the sheet. */
         final EntityTooltip place;
+        /** In battle, what the cursor points at (the HUD's hover tooltip), shown on the panel instead. */
+        final EntityTooltip hover;
+        private EID hoverOf;
+        boolean hoverShown;
         /** The game's own top-bar art (behind "Chapter Three ..." in the HUD), for the panel's header. */
         final BaseBar bar;
         private EID placeOf;
@@ -630,14 +670,17 @@ final class DualScreen {
         boolean dirty;
         private long lastRebuild;
 
-        Sheet(ClientCampaignDomain domain) {
-            this.domain = domain;
-            deps = domain.dependencies;
+        Sheet(Game game) {
+            this.game = game;
+            deps = game.deps;
             panels = new DetailsPanel[]{new AbilitiesDetails(deps), new GearDetails(deps), new StatsDetails(deps, false),
                     new CombatDetails(deps), new RelationshipDetails(deps), new AspectsDetails(deps)};
-            status = new EntityTooltip(deps, EntityTooltip.Mode.overland);
-            place = new EntityTooltip(deps, EntityTooltip.Mode.overland);
+            EntityTooltip.Mode mode = game.campaign == null ? EntityTooltip.Mode.mission : EntityTooltip.Mode.overland;
+            status = new EntityTooltip(deps, mode);
+            place = new EntityTooltip(deps, mode);
             place.setVisible(false);
+            hover = new EntityTooltip(deps, mode);
+            hover.setVisible(false);
             bar = new BaseBar(deps, false);
             bar.setVisible(false);
             table = new Table(deps.skin);
@@ -670,19 +713,20 @@ final class DualScreen {
          * A tooltip card at a sheet column's width, so the game wraps its text instead of one long line,
          * and at least the box's height, so its parchment fills the whole box.
          */
-        private final Actor placeFiller = new Actor(), statusFiller = new Actor();
+        private final Actor placeFiller = new Actor(), statusFiller = new Actor(), hoverFiller = new Actor();
 
         /** The hero's card is a dropdown under the name: narrower, and only as tall as its content. */
         private static final float DROPDOWN_WIDTH = 440;
 
         private void layOut(EntityTooltip card) {
             boolean dropdown = card == status;
+            float width = dropdown ? DROPDOWN_WIDTH : cardWidth;
             try { // the parchment is on an inner panel sized to its content: let it fill, content on top
                 Table body = (Table) field(card, "tooltipBody");
                 Cell<?> cell = card.getCell(body);
                 if (cell != null) cell.grow();
                 // An empty last row takes the extra height, so the game's rows stay packed at the top.
-                Actor filler = card == place ? placeFiller : statusFiller;
+                Actor filler = card == place ? placeFiller : card == hover ? hoverFiller : statusFiller;
                 if (!dropdown && !body.getChildren().contains(filler, true)) {
                     body.row();
                     body.add(filler);
@@ -692,10 +736,17 @@ final class DualScreen {
             } catch (ReflectiveOperationException | RuntimeException ignored) {
                 // a tooltip laid out differently: keep the game's own sizing
             }
-            float width = dropdown ? DROPDOWN_WIDTH : cardWidth;
             card.setWidth(width);
             card.invalidate();
             card.validate();
+            // Never taller than the window, or the capture loses its top: widen until it fits.
+            float limit = Gdx.graphics.getHeight() * 0.95f;
+            while (card.getPrefHeight() > limit && width < Gdx.graphics.getWidth() * 0.95f) {
+                width += 120;
+                card.setWidth(width);
+                card.invalidate();
+                card.validate();
+            }
             card.setHeight(dropdown ? card.getPrefHeight() : Math.max(card.getPrefHeight(), width * aspect));
             card.validate();
         }
@@ -731,7 +782,7 @@ final class DualScreen {
         private final java.util.Set<Actor> lightened = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
 
         private Entity entity() {
-            return hero == null ? null : domain.entities.entity(hero);
+            return hero == null ? null : game.entities.entity(hero);
         }
 
         /** What a selected non-hero is, for the header's small caps line. */
@@ -741,27 +792,39 @@ final class DualScreen {
             if (e.contains(Site.class)) return "Site";
             if (e.contains(Party.class)) return "Party";
             if (e.contains(OverlandTile.class)) return "Tile";
+            if (e.contains(Individual.class)) return Controlled.isControlledByHuman(e.parentCollection, e) ? "Hero" : "Foe";
             return "Selected";
         }
 
         /** For the panel's header and tab row; null with no hero to show. */
         String state() {
-            if (placeMode) return "{\"place\":" + quote(kind(domain.entities.entity(placeOf)))
-                    + ",\"placeName\":" + quote(deps.gameStrings.bestName(domain.entities, placeOf)) + "}";
+            if (placeMode) return "{\"place\":" + quote(kind(game.entities.entity(placeOf)))
+                    + ",\"placeName\":" + quote(deps.gameStrings.bestName(game.entities, placeOf)) + "}";
             if (hero == null) return null;
-            StringBuilder b = new StringBuilder("{\"name\":").append(quote(deps.gameStrings.bestName(domain.entities, hero)))
+            StringBuilder b = new StringBuilder("{\"name\":").append(quote(deps.gameStrings.bestName(game.entities, hero)))
                     .append(",\"tab\":").append(tab).append(",\"view\":").append(view).append(",\"tabs\":[");
             for (int i = 0; i < TABS.length; i++) b.append(i > 0 ? "," : "").append(quote(deps.gameStrings.ui(TABS[i])));
             return b.append("]}").toString();
         }
 
         /** Follows the selection; rebuilds the open tab when the game says state changed (at most ~3/s). */
-        void update(ClientCampaignDomain d) {
+        void update(Game d) {
             UISelectionState sel = UISelectionState.in(d.entities);
+            EID h = game.campaign == null ? sel.selectionHover() : null;
+            Entity he = h == null ? null : d.entities.entity(h);
+            hoverShown |= he != null; // keeps the last card once the cursor moves off
+            if (he != null && (!h.equals(hoverOf) || dirty)) {
+                hover.setCharacter(he);
+                hoverOf = h;
+            }
+            if (hoverShown) layOut(hover);
             EID id = sel.selectedEntity();
             Entity e = id == null ? null : d.entities.entity(id);
             boolean isHero = e != null && e.contains(Individual.class) && CharacterSheetPopup.canView(deps, e);
-            placeMode = e != null && !isHero;
+            // A card for places on the map, or anything but a hero in a battle (a foe, a tile); story events
+            // and the like keep the hero's sheet up.
+            placeMode = e != null && !isHero && (game.campaign == null || e.contains(OverlandTile.class)
+                    || e.contains(Site.class) || e.contains(Threat.class) || e.contains(Party.class));
             if (placeMode && (!id.equals(placeOf) || dirty)) {
                 place.setCharacter(e);
                 placeOf = id;
@@ -803,12 +866,37 @@ final class DualScreen {
         b[at + 3] = (byte) v;
     }
 
+    /** What the HUD widgets read from, on the campaign map or in a battle. */
+    static final class Game {
+        final LegacyViewDependencies deps;
+        final EntitiesCollection entities;
+        final ViewClientAPI api;
+        /** The campaign, for the overview map; null in a battle. */
+        final ClientCampaignDomain campaign;
+
+        Game(LegacyViewDependencies deps, EntitiesCollection entities, ViewClientAPI api, ClientCampaignDomain campaign) {
+            this.deps = deps;
+            this.entities = entities;
+            this.api = api;
+            this.campaign = campaign;
+        }
+    }
+
     /** The campaign HUD widgets we move, resolved fresh each time because the HUD rebuilds them. */
     private static final class Hud {
-        ClientCampaignDomain domain;
-        Object campaignHud;
+        Game game;
+        Object gameHud;
+        /** The particle layer used only for portrait backdrops (CampaignHud and MissionHud both have one). */
+        Actor portraitBackdrops;
+        /** The UI root's popups: a battle's dependencies are a copy with their own, often unused, manager. */
+        PopUpManager rootPopups;
+
+        /** A story event, foe cards, a menu or any other popup is over the game. */
+        boolean popupOpen() {
+            return !game.deps.popUpManager.isEmpty() || rootPopups != null && !rootPopups.isEmpty();
+        }
         CanvasGroup canvas;
-        Actor roster, console, consoleToggle, threats, sheet, status, place, bar;
+        Actor roster, console, consoleToggle, threats, sheet, status, place, bar, undo, retreat, hover;
         /** The HUD's own top bar, to size ours like it. */
         Actor topBar;
         /** Per process, not per Hud: Hud objects are rebuilt every frame. */
@@ -817,25 +905,28 @@ final class DualScreen {
 
         /** Indexed by widget id. */
         Actor[] widgets() {
-            return new Actor[]{roster, console, consoleToggle, threats, sheet, status, place, bar};
+            return new Actor[]{roster, console, consoleToggle, threats, sheet, status, place, bar, undo, retreat, hover};
         }
 
 
         /** The game's own "show message log" option, toggled by its console button. */
         boolean consoleShown() {
-            return domain.dependencies.context.interfaceOptions.showGameConsole;
+            return game.deps.context.interfaceOptions.showGameConsole;
         }
 
         /** Hides the widgets in the HUD and sizes the console to its box on the panel. */
         void moveOut(float consoleWidth, float consoleHeight) {
             // Edge panning needs a real mouse; here a cursor left on the top edge (a stray touch) pans for ever.
-            InterfaceOptions options = InterfaceOptions.in(domain.entities);
+            InterfaceOptions options = InterfaceOptions.in(game.entities);
             if (options != null && options.panCameraAtEdgeOfScreen) {
                 options.panCameraAtEdgeOfScreen = false; // in memory only: the saved option is untouched
                 edgePanWasOn = true;
             }
             Actor[] widgets = widgets();
             for (Actor a : widgets) if (a != null) a.setVisible(false);
+            // The portraits' backdrops (sparkles) live on their own particle layer: hide it too.
+            if (portraitBackdrops != null) portraitBackdrops.setVisible(false);
+            unmaskBattle();
             oneColumn(roster);
             if (consoleCell != null && consoleShown() && consoleWidth > 0
                     && (consoleCell.explicitWidth != consoleWidth || consoleCell.explicitHeight != consoleHeight)) {
@@ -850,11 +941,11 @@ final class DualScreen {
          * slide-in): flip and save the option, and give the button the art the rebuild would.
          */
         void toggleConsole() {
-            ClientContext context = domain.dependencies.context;
+            ClientContext context = game.deps.context;
             context.interfaceOptions.showGameConsole = !context.interfaceOptions.showGameConsole;
             context.saveAllOptions();
             if (consoleToggle == null) return;
-            AutoSwapDrawable icon = new AutoSwapDrawable(domain.dependencies.skin.getSisterSkin(ClientDataContext.Skins.SCALE_UI));
+            AutoSwapDrawable icon = new AutoSwapDrawable(game.deps.skin.getSisterSkin(ClientDataContext.Skins.SCALE_UI));
             String art = context.interfaceOptions.showGameConsole ? "mainMenu_promoBarX_up" : "icon_dropdown";
             icon.addOption(art);
             icon.addOption(art + "2x");
@@ -895,18 +986,43 @@ final class DualScreen {
         /** Each roster's own slot count, before we raised it. */
         private static final java.util.Map<Actor, Float> baseSlots = new java.util.WeakHashMap<>();
 
+        /**
+         * In battle the world isn't drawn under portrait cards or the log (a stencil the HUD and each card
+         * register). Transparent cards opt out by the game's own rule; the HUD's own mask we replace with just
+         * its top and bottom bars, since the log has moved off.
+         */
+        private void unmaskBattle() {
+            if (game.campaign != null) return;
+            for (Actor a : new Actor[]{roster, threats}) if (a != null) a.getColor().a = 0;
+            EnvironmentRenderContext ctx = game.deps.environmentRenderContext;
+            if (ctx == null || ctx == unmasked) return;
+            unmasked = ctx;
+            ctx.renderStencilSignal.remove(gameHud);
+            LegacyViewDependencies.ScreenInfo screen = game.deps.screenInfo;
+            ctx.renderStencilSignal.add(BARS_MASK, (ShapeRenderer shapes) -> {
+                if (shapes == null) return;
+                float bottom = screen.scale(80), top = screen.scale(36);
+                shapes.rect(0, 0, screen.width, bottom);
+                shapes.rect(0, screen.height - top, screen.width, top);
+            });
+        }
+
+        /** The battle whose stencil we replaced (one per battle). */
+        private static EnvironmentRenderContext unmasked;
+        private static final Object BARS_MASK = new Object();
+
         /** Gives edge panning back if we turned it off; the panel is gone. */
         void restoreEdgePan() {
-            InterfaceOptions options = InterfaceOptions.in(domain.entities);
+            InterfaceOptions options = InterfaceOptions.in(game.entities);
             if (options != null && edgePanWasOn) options.panCameraAtEdgeOfScreen = true;
             edgePanWasOn = false;
         }
 
         void rebuild() {
             try {
-                java.lang.reflect.Method m = campaignHud.getClass().getDeclaredMethod("invalidateBuild");
+                java.lang.reflect.Method m = gameHud.getClass().getDeclaredMethod("invalidateBuild");
                 m.setAccessible(true);
-                m.invoke(campaignHud);
+                m.invoke(gameHud);
             } catch (ReflectiveOperationException e) {
                 roster.setVisible(true); // at least give the roster back
             }
@@ -917,17 +1033,28 @@ final class DualScreen {
                 if (!(Gdx.app.getApplicationListener() instanceof LegacyDesktop)) return null;
                 Object ui = field(Gdx.app.getApplicationListener(), "ui");
                 ClientContext control = (ClientContext) field(ui, "control");
-                if (control == null || control.viewState != ClientContext.ViewState.campaign) return null;
-                ClientCampaignDomain domain = control.instances == null ? null : control.instances.campaign;
-                if (domain == null || !domain.api.hasBeenWelcomed) return null;
-                Object screen = field(ui, "content");
-                if (screen == null || !screen.getClass().getSimpleName().equals("CampaignScreen")) return null;
+                if (control == null || control.instances == null) return null;
                 Hud h = new Hud();
-                h.domain = domain;
-                h.campaignHud = field(screen, "hud");
-                Object portraits = field(h.campaignHud, "unitPortraits");
-                h.console = (Actor) field(h.campaignHud, "gameConsole");
-                h.canvas = (CanvasGroup) field(h.campaignHud, "canvas");
+                Object screen = field(ui, "content");
+                String screenName = screen == null ? "" : screen.getClass().getSimpleName();
+                if (control.viewState == ClientContext.ViewState.campaign && control.instances.campaign != null
+                        && screenName.equals("CampaignScreen")) {
+                    ClientCampaignDomain d = control.instances.campaign;
+                    h.game = new Game(d.dependencies, d.entities, d.api, d);
+                } else if (control.viewState == ClientContext.ViewState.mission && control.instances.mission != null
+                        && screenName.equals("MissionScreen")) {
+                    ClientMissionDomain d = control.instances.mission;
+                    h.game = new Game(d.dependencies, d.entities, d.api, null);
+                } else {
+                    return null;
+                }
+                if (!h.game.api.hasBeenWelcomed) return null;
+                Object rootDeps = field(ui, "dependencies");
+                if (rootDeps instanceof LegacyViewDependencies) h.rootPopups = ((LegacyViewDependencies) rootDeps).popUpManager;
+                h.gameHud = field(screen, "hud");
+                Object portraits = field(h.gameHud, "unitPortraits");
+                h.console = (Actor) field(h.gameHud, "gameConsole");
+                h.canvas = (CanvasGroup) field(h.gameHud, "canvas");
                 if (portraits == null || h.console == null || h.canvas == null) return null;
                 h.roster = (Actor) field(field(portraits, "friendlyPortraitMapper"), "verticalGroup");
                 if (h.roster == null) return null;
@@ -939,6 +1066,14 @@ final class DualScreen {
                 for (int i = 0; i < all.size; i++) // the top bar is the BaseBar not pinned at y 0
                     if (all.get(i) instanceof BaseBar && all.get(i).getY() > 0) h.topBar = all.get(i);
                 h.threats = (Actor) field(field(portraits, "enemyPortraitMapper"), "verticalGroup");
+                h.portraitBackdrops = (Actor) field(h.gameHud, "bottomParticleStageUI");
+                if (h.game.campaign == null) { // a battle's Undo and Retreat buttons go to the panel's bar
+                    h.undo = (Actor) field(h.gameHud, "undoButton");
+                    // The HUD forgets its retreat button after the first frame; it sits right after Undo.
+                    Group row = h.undo == null ? null : h.undo.getParent();
+                    int at = row == null ? -1 : row.getChildren().indexOf(h.undo, true);
+                    if (at >= 0 && at + 1 < row.getChildren().size) h.retreat = row.getChildren().get(at + 1);
+                }
                 return h;
             } catch (ReflectiveOperationException | RuntimeException e) {
                 return null; // mid-rebuild or a screen we don't handle
