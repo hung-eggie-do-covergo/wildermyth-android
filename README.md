@@ -57,6 +57,9 @@ yet, give it a try: it's on [Steam](https://store.steampowered.com/app/763890/Wi
 - **Steam achievements** unlock as you play and sync after each session.
 - **DLC** you own on Steam is unlocked.
 - **Controller and sound** work out of the box.
+- **Dual screens.** On handhelds with a second screen, like the Thor, turn on "Dual screen" in the setup
+  screen: your heroes, their character sheets, the selected tile and the message log move to the bottom
+  screen, drawn by the game itself, and the map gets the whole top screen.
 
 Tested on the AYN Thor (Snapdragon 8 Gen 2, Android 13). Other Android handhelds with a Snapdragon chip may
 work, but haven't been tested.
@@ -73,7 +76,7 @@ sound).
 | `wmcloud/` | Steam in Kotlin: QR sign-in, Steam Cloud pull/push with conflict and mass-delete guards, achievements, DLC ownership, and the game download. |
 | `jamepad-android/` | Android build of Jamepad, the game's controller library, over the app's SDL. |
 | `fmod-android/` | Android build of the game's FMOD Java bridge, attaching FMOD's threads to ART. |
-| `dlcagent/` | A Java agent that answers the game's DLC checks from Steam-verified ownership. |
+| `dlcagent/` | A Java agent in the game: it answers the game's DLC checks from Steam-verified ownership, and draws HUD panels for the second screen. |
 
 ## Status and limits
 
@@ -91,7 +94,8 @@ for Android from [fmod.com](https://www.fmod.com/download).
 ```sh
 export ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/27.3.13750724   # your NDK r27
 export FMOD_SDK=~/fmodstudioapi11012android/api                     # the SDK's api/ directory
-jamepad-android/build.sh && fmod-android/build.sh                   # optional: prebuilt copies are in the app
+export WILDERMYTH_DIR=~/wildermyth                                  # a game install, for dlcagent to compile against
+jamepad-android/build.sh && fmod-android/build.sh && dlcagent/build.sh  # optional: prebuilt copies are in the app
 cd amethyst && ./gradlew :app_pojavlauncher:assembleRelease
 ```
 

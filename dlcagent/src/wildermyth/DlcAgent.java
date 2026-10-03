@@ -25,6 +25,11 @@ public final class DlcAgent {
             System.err.println("DlcAgent: could not apply owned DLC: " + t);
         }
         threadDumpOnRequest();
+        try {
+            DualScreen.start();
+        } catch (Throwable t) {
+            System.err.println("DlcAgent: no second screen: " + t); // e.g. a game update renamed a class
+        }
     }
 
     /**
