@@ -49,9 +49,9 @@ yet, give it a try: it's on [Steam](https://store.steampowered.com/app/763890/Wi
 
 ## Dual-Screen
 
-On a dual-screen handheld like the Thor, turn on **Dual screen** in the setup screen (top right). The map
-gets the whole top screen; your heroes and everything about them move to the bottom one, drawn with the
-game's own art. Tap anything there; the controller keeps driving the game.
+On a dual-screen handheld like the Thor, turn on "Dual screen" on the setup screen (top right). The map
+uses the whole top screen, and the hero panels move to the bottom screen. The controller still controls the
+game; the bottom screen is for touch.
 
 | Hero sheet | Hero card (tap the name) | Selected tile |
 |---|---|---|
@@ -59,11 +59,10 @@ game's own art. Tap anything there; the controller keeps driving the game.
 | **Overview map** | **Threats** | **Message log** |
 | ![The campaign map: terrain, fog, threat coins, your parties and the camera frame](docs/ds-map.jpeg) | ![The threats column shown over the sheet](docs/ds-threats.jpeg) | ![The game's message log over the bottom screen](docs/ds-log.jpeg) |
 
-- **Hero sheet:** abilities, gear, stats, combat, relationships and aspects, one column at a time, sized for
-  fingers. Tap an entry for its details.
-- **Overview map:** the whole campaign at a glance, with fog of war, threats and your parties. Pinch, drag,
-  and tap a tile to fly the camera there.
-- **Threats** and the **message log** open over the bottom screen when you want them.
+- Hero sheet: abilities, gear, stats, combat, relationships and aspects. Tap an entry for details.
+- Overview map: terrain, fog of war, threats and your heroes. Pinch to zoom, drag to pan, tap a tile to
+  move the camera there.
+- Threats and the message log open with the buttons at the top.
 
 ## Features
 
@@ -75,13 +74,9 @@ game's own art. Tap anything there; the controller keeps driving the game.
 - **Steam achievements** unlock as you play and sync after each session.
 - **DLC** you own on Steam is unlocked.
 - **Controller and sound** work out of the box.
-- **Dual screens.** On handhelds with a second screen, like the Thor, turn on "Dual screen" in the setup
-  screen: your heroes, their character sheets, the selected tile, the message log and an overview map of
-  the campaign move to the bottom screen, drawn with the game's own art, and the map gets the whole top
-  screen.
-- **Touch and controller together.** The game keeps its controller prompts while you tap the screen.
-- **Updates itself.** When a new version is out, the app offers to download and install it (Android asks
-  you to confirm). Switch it off with "Updates" on the setup screen.
+- **Dual screen** on handhelds with two screens. See [Dual-Screen](#dual-screen).
+- **Touch and controller** both work. Tapping doesn't switch the game to keyboard prompts.
+- **Updates.** The app offers new releases when you open it. Turn off with "Updates" on the setup screen.
 
 Tested on the AYN Thor (Snapdragon 8 Gen 2, Android 13). Other Android handhelds with a Snapdragon chip may
 work, but haven't been tested.
@@ -98,7 +93,7 @@ sound).
 | `wmcloud/` | Steam in Kotlin: QR sign-in, Steam Cloud pull/push with conflict and mass-delete guards, achievements, DLC ownership, and the game download. |
 | `jamepad-android/` | Android build of Jamepad, the game's controller library, over the app's SDL. |
 | `fmod-android/` | Android build of the game's FMOD Java bridge, attaching FMOD's threads to ART. |
-| `gameagent/` | The app's Java agent inside the game: it answers the game's DLC checks from Steam-verified ownership, keeps controller mode on for touch, and draws HUD panels and the map for the second screen. |
+| `gameagent/` | A Java agent loaded into the game: owned DLC, controller mode with touch, and the second screen's panels and map. |
 
 ## Status and limits
 
