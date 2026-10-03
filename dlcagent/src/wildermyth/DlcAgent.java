@@ -26,6 +26,11 @@ public final class DlcAgent {
         }
         threadDumpOnRequest();
         try {
+            ControllerMode.start();
+        } catch (Throwable t) {
+            System.err.println("DlcAgent: controller mode not pinned: " + t);
+        }
+        try {
             DualScreen.start();
         } catch (Throwable t) {
             System.err.println("DlcAgent: no second screen: " + t); // e.g. a game update renamed a class

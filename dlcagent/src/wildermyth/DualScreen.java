@@ -22,6 +22,7 @@ import com.worldwalkergames.engine.Entity;
 import com.worldwalkergames.legacy.context.LegacyViewDependencies;
 import com.worldwalkergames.legacy.game.common.UISelectionState;
 import com.worldwalkergames.legacy.game.common.ui.EntityTooltip;
+import com.worldwalkergames.legacy.game.mission.ui.BaseBar;
 import com.worldwalkergames.legacy.game.mission.ui.PortraitCard;
 import com.worldwalkergames.legacy.game.model.Individual;
 import com.worldwalkergames.legacy.options.InterfaceOptions;
@@ -75,17 +76,20 @@ import java.util.regex.Pattern;
  * socket); taps on the panel come back as clicks. Game state is only touched on the GL thread.
  */
 final class DualScreen {
-    private static final long TICK_MS = 250, FRAME_MS = 66;
+    /** Frames at 30/s, 60/s for a moment after each touch, so drags and taps answer quickly. */
+    private static final long TICK_MS = 250, FRAME_MS = 33, FAST_FRAME_MS = 16, FAST_FOR_MS = 600;
     /** Off-screen resolution relative to the window: the panel shows the widgets larger than in the HUD. */
-    private static final int SCALE = 3;
+    private static final int SCALE = 2;
     /** Widget ids shared with the panel. */
     private static final int ROSTER = 0, CONSOLE = 1, CONSOLE_TOGGLE = 2, THREATS = 3, SHEET = 4, STATUS = 5,
-            PLACE = 6, COUNT = 7;
+            PLACE = 6, BAR = 7, COUNT = 8;
     private static final float ROSTER_MARGIN = 24;
     private static final Pattern TAP = Pattern.compile("\"tap\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*([0-9.]+)\\s*,\\s*([0-9.]+)");
     private static final Pattern TOUCH = Pattern.compile("\"touch\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d)\\s*,\\s*([0-9.]+)\\s*,\\s*([0-9.]+)");
     private static final Pattern SHEET_TAB = Pattern.compile("\"sheetTab\"\\s*:\\s*(\\d+)");
     private static final Pattern SHEET_VIEW = Pattern.compile("\"sheetView\"\\s*:\\s*(\\d+)");
+    private static final Pattern VISIBLE = Pattern.compile("\"visible\"\\s*:\\s*(\\d+)");
+    private static final Pattern BAR_SIZE = Pattern.compile("\"barSize\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d+)");
     private static final Pattern SHEET_SIZE = Pattern.compile("\"sheetSize\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d+)");
     private static final Pattern SCROLL = Pattern.compile("\"scroll\"\\s*:\\s*\\[\\s*(-?[0-9.]+)");
     private static final Pattern CONSOLE_SIZE = Pattern.compile("\"consoleSize\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d+)");
@@ -95,15 +99,25 @@ final class DualScreen {
     private final BlockingQueue<byte[]> outbox = new ArrayBlockingQueue<>(16);
     private final AtomicBoolean framePending = new AtomicBoolean();
     private volatile boolean connected;
+    /** Until when to run at the fast rate; set by touches, which also ask for a frame straight away. */
+    private volatile long fastUntil;
+    private volatile boolean frameNow;
     /** The console's box on the panel, in panel pixels; 0 until the panel reports it. */
     private volatile int consoleW, consoleH;
     /** The sheet's box on the panel, in panel pixels. */
     private volatile int sheetW, sheetH;
+    /** The header's box on the panel, in panel pixels: the game's top bar is drawn at that size. */
+    private volatile int barW, barH;
     private String lastError;
     // GL-thread state.
     private String lastState = "";
     private boolean moved;
     private FrameBuffer fbo;
+    /** Checksum of the last frame sent per widget (0: an empty one), to skip unchanged frames. */
+    private final long[] lastSum = new long[COUNT];
+    private final java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+    /** Bit per widget id the panel is showing; it tells us as overlays open and close. */
+    private volatile int visible = -1;
     private GL20 scaledGl, scaledFor;
     /**
      * First actor on the HUD stage, so it draws before everything else each frame: hides the moved widgets
@@ -140,6 +154,7 @@ final class DualScreen {
         h.sheet = sheet.table;
         h.status = sheet.status;
         h.place = sheet.place;
+        h.bar = sheet.bar;
         return h;
     }
 
@@ -160,6 +175,7 @@ final class DualScreen {
             try (Socket s = new Socket(InetAddress.getByName("127.0.0.1"), port)) {
                 DataOutputStream out = new DataOutputStream(s.getOutputStream());
                 lastState = "";
+                java.util.Arrays.fill(lastSum, -1); // a new panel has none of our frames
                 connected = true;
                 Thread reader = new Thread(() -> read(s), "wm-dualscreen-in");
                 reader.setDaemon(true);
@@ -172,11 +188,13 @@ final class DualScreen {
                         nextState = now + TICK_MS;
                     }
                     // One frame in flight at most: a slow GL thread drops frames instead of queueing them.
-                    if (now >= nextFrame && Gdx.app != null && framePending.compareAndSet(false, true)) {
+                    boolean fast = now < fastUntil;
+                    if ((now >= nextFrame || frameNow) && Gdx.app != null && framePending.compareAndSet(false, true)) {
+                        frameNow = false;
                         post(this::frame);
-                        nextFrame = now + FRAME_MS;
+                        nextFrame = now + (fast ? FAST_FRAME_MS : FRAME_MS);
                     }
-                    byte[] msg = outbox.poll(FRAME_MS, TimeUnit.MILLISECONDS);
+                    byte[] msg = outbox.poll(fast ? 4 : FAST_FRAME_MS, TimeUnit.MILLISECONDS);
                     if (msg == null) continue;
                     out.writeInt(msg.length);
                     out.write(msg);
@@ -200,6 +218,11 @@ final class DualScreen {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = in.readLine()) != null) {
+                if (line.contains("\"tap\"") || line.contains("\"touch\"") || line.contains("\"scroll\"")
+                        || line.contains("\"sheet")) {
+                    fastUntil = System.currentTimeMillis() + FAST_FOR_MS;
+                    frameNow = true;
+                }
                 Matcher m = TAP.matcher(line);
                 if (m.find()) {
                     int id = Integer.parseInt(m.group(1));
@@ -221,6 +244,16 @@ final class DualScreen {
                 if (m.find()) {
                     int v = Integer.parseInt(m.group(1));
                     post(() -> { if (sheet != null) sheet.showDetail(v); });
+                }
+                m = VISIBLE.matcher(line);
+                if (m.find()) {
+                    visible = Integer.parseInt(m.group(1));
+                    java.util.Arrays.fill(lastSum, -1); // newly shown widgets need a fresh frame
+                }
+                m = BAR_SIZE.matcher(line);
+                if (m.find()) {
+                    barW = Integer.parseInt(m.group(1));
+                    barH = Integer.parseInt(m.group(2));
                 }
                 m = SHEET_SIZE.matcher(line);
                 if (m.find()) {
@@ -298,6 +331,9 @@ final class DualScreen {
             if (!root.getChildren().contains(sheet.table, true)) root.addActor(sheet.table);
             if (!root.getChildren().contains(sheet.status, true)) root.addActor(sheet.status);
             if (!root.getChildren().contains(sheet.place, true)) root.addActor(sheet.place);
+            if (!root.getChildren().contains(sheet.bar, true)) root.addActor(sheet.bar);
+            // At the HUD's own size, so its pattern is the HUD's; area() crops a piece the header's shape.
+            if (hud.topBar != null) sheet.bar.setSize(hud.topBar.getWidth(), hud.topBar.getHeight());
             sheet.fit(sheetW, sheetH);
             sheet.update(hud.domain);
         }
@@ -335,10 +371,14 @@ final class DualScreen {
         fbo.begin();
         try {
             Actor[] widgets = hud.widgets();
+            int shown = visible;
             for (int id = 0; id < widgets.length; id++) {
+                if ((shown & (1 << id)) == 0) continue; // off the panel right now: not worth a capture
                 int[] r = widgets[id] == null || (id == CONSOLE && !hud.consoleShown()) ? new int[4]
                         : pixelBounds(area(widgets[id], id), stage.getCamera(), w, h);
                 if (r[2] <= 0 || r[3] <= 0) { // nothing to show: an empty frame clears the panel's copy
+                    if (lastSum[id] == 0) continue;
+                    lastSum[id] = 0;
                     byte[] msg = new byte[10];
                     msg[0] = 'F';
                     msg[1] = (byte) id;
@@ -349,6 +389,11 @@ final class DualScreen {
                 Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
                 draw(widgets[id], stage);
                 byte[] px = ScreenUtils.getFrameBufferPixels(r[0], r[1], r[2], r[3], true);
+                crc.reset();
+                crc.update(px, 0, px.length);
+                long sum = crc.getValue() ^ ((long) r[2] << 32) ^ ((long) r[3] << 48) | 1;
+                if (sum == lastSum[id]) continue; // unchanged: the panel already has it
+                lastSum[id] = sum;
                 byte[] msg = new byte[10 + px.length];
                 msg[0] = 'F';
                 msg[1] = (byte) id;
@@ -406,6 +451,10 @@ final class DualScreen {
      * its cards plus a margin, since badges and out-of-action cards stick out past their edges.
      */
     private float[] area(Actor a, int id) {
+        if (id == BAR && barW > 0) { // the left end of the bar, in the header's proportions
+            Vector2 lo = a.localToStageCoordinates(new Vector2(0, 0));
+            return new float[]{lo.x, lo.y, Math.min(a.getWidth(), a.getHeight() * barW / barH), a.getHeight()};
+        }
         if (id == SHEET) { // one column of the sheet's panel
             sheet.table.validate(); // a newly opened tab has no layout yet: its column would measure 0 x 0
             Actor c = sheet.column();
@@ -521,21 +570,24 @@ final class DualScreen {
         Actor a = stage == null || id < 0 || id >= COUNT ? null : hud.widgets()[id];
         if (a == null || !hud.domain.dependencies.popUpManager.isEmpty()) return;
         float[] r = area(a, id);
-        Vector2 p = stage.stageToScreenCoordinates(new Vector2(r[0] + fx * r[2], r[1] + (1 - fy) * r[3]));
-        int x = Math.round(p.x), y = Math.round(p.y);
-        a.setVisible(true); // hit testing skips hidden actors; the guard hides it again before drawing
-        a.toFront();
+        float sx = r[0] + fx * r[2], sy = r[1] + (1 - fy) * r[3];
+        // Straight to the widget, like tap(): moving the stage's pointer would unhover the HUD's
+        // controller-mode default action and make its prompt flicker.
+        a.setVisible(true); // hidden actors are skipped by hit tests; the guard hides it again
         if (action == 0) {
-            stage.mouseMoved(x, y);
-            stage.touchDown(x, y, 0, Input.Buttons.LEFT);
-        } else if (action == 1) {
-            stage.touchDragged(x, y, 0);
-        } else {
-            stage.touchUp(x, y, 0, Input.Buttons.LEFT);
-            stage.mouseMoved(-1, -1); // leave no hover tooltip on the main screen
+            Vector2 local = a.stageToLocalCoordinates(new Vector2(sx, sy));
+            touchTarget = a.hit(local.x, local.y, true);
         }
+        if (touchTarget != null)
+            fire(touchTarget, stage, action == 0 ? InputEvent.Type.touchDown
+                    : action == 1 ? InputEvent.Type.touchDragged : InputEvent.Type.touchUp, sx, sy);
+        if (action == 2) touchTarget = null;
         a.setVisible(false);
     }
+
+    /** The actor a finger went down on; its drags and lift go there too, as with the stage's touch focus. */
+    private Actor touchTarget;
+
 
     /**
      * The game's character-sheet panels for the selected hero (or the last one, while a tile is selected).
@@ -547,7 +599,7 @@ final class DualScreen {
                 "characterSheet.statsTab", "characterSheet.combatTab", "characterSheet.relationshipsTab",
                 "characterSheet.aspectsTab"};
         /** Width of the two-column panel in stage units; each column is about half. */
-        private static final float WIDTH = 800;
+        private static final float WIDTH = 1060;
         final ClientCampaignDomain domain;
         final Table table;
         private final LegacyViewDependencies deps;
@@ -556,6 +608,8 @@ final class DualScreen {
         final EntityTooltip status;
         /** While a tile, site or threat is selected, its card (the same tooltip) replaces the sheet. */
         final EntityTooltip place;
+        /** The game's own top-bar art (behind "Chapter Three ..." in the HUD), for the panel's header. */
+        final BaseBar bar;
         private EID placeOf;
         private boolean placeMode;
         private final Cell<Actor> panelCell;
@@ -574,6 +628,8 @@ final class DualScreen {
             status = new EntityTooltip(deps, EntityTooltip.Mode.overland);
             place = new EntityTooltip(deps, EntityTooltip.Mode.overland);
             place.setVisible(false);
+            bar = new BaseBar(deps, false);
+            bar.setVisible(false);
             table = new Table(deps.skin);
             table.setVisible(false);
             table.setSize(WIDTH, WIDTH * 0.5f);
@@ -598,7 +654,7 @@ final class DualScreen {
          * Wider than a sheet column: the card's fonts are larger styles, and the less the panel magnifies
          * the game's bitmap glyphs, the sharper they look.
          */
-        private final float cardWidth = 600;
+        private final float cardWidth = 800;
 
         /**
          * A tooltip card at a sheet column's width, so the game wraps its text instead of one long line,
@@ -606,14 +662,18 @@ final class DualScreen {
          */
         private final Actor placeFiller = new Actor(), statusFiller = new Actor();
 
+        /** The hero's card is a dropdown under the name: narrower, and only as tall as its content. */
+        private static final float DROPDOWN_WIDTH = 440;
+
         private void layOut(EntityTooltip card) {
+            boolean dropdown = card == status;
             try { // the parchment is on an inner panel sized to its content: let it fill, content on top
                 Table body = (Table) field(card, "tooltipBody");
                 Cell<?> cell = card.getCell(body);
                 if (cell != null) cell.grow();
                 // An empty last row takes the extra height, so the game's rows stay packed at the top.
                 Actor filler = card == place ? placeFiller : statusFiller;
-                if (!body.getChildren().contains(filler, true)) {
+                if (!dropdown && !body.getChildren().contains(filler, true)) {
                     body.row();
                     body.add(filler);
                 }
@@ -622,10 +682,11 @@ final class DualScreen {
             } catch (ReflectiveOperationException | RuntimeException ignored) {
                 // a tooltip laid out differently: keep the game's own sizing
             }
-            card.setWidth(cardWidth);
+            float width = dropdown ? DROPDOWN_WIDTH : cardWidth;
+            card.setWidth(width);
             card.invalidate();
             card.validate();
-            card.setHeight(Math.max(card.getPrefHeight(), cardWidth * aspect));
+            card.setHeight(dropdown ? card.getPrefHeight() : Math.max(card.getPrefHeight(), width * aspect));
             card.validate();
         }
 
@@ -646,29 +707,37 @@ final class DualScreen {
         Actor column() {
             try {
                 Actor right = (Actor) field(panels[tab], "rightScroll");
+                if (right instanceof ScrollPane && !lightened.contains(right)) { // dark parchment, dark text: lighten it
+                    ScrollPane sp = (ScrollPane) right;
+                    sp.setStyle(deps.skin.get("lightDialogPanel", ScrollPane.ScrollPaneStyle.class));
+                    lightened.add(right);
+                }
                 return view == 1 && right != null ? right : (Actor) field(panels[tab], "leftScroll");
             } catch (ReflectiveOperationException e) {
                 return table;
             }
         }
 
+        private final java.util.Set<Actor> lightened = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
         private Entity entity() {
             return hero == null ? null : domain.entities.entity(hero);
         }
 
-        /** What a selected non-hero is, for the header: its card already shows its name. */
+        /** What a selected non-hero is, for the header's small caps line. */
         private static String kind(Entity e) {
-            if (e == null) return "Selection";
-            if (e.contains(Threat.class)) return "Selected threat";
-            if (e.contains(Site.class)) return "Selected site";
-            if (e.contains(Party.class)) return "Selected party";
-            if (e.contains(OverlandTile.class)) return "Selected tile";
-            return "Selection";
+            if (e == null) return "Selected";
+            if (e.contains(Threat.class)) return "Threat";
+            if (e.contains(Site.class)) return "Site";
+            if (e.contains(Party.class)) return "Party";
+            if (e.contains(OverlandTile.class)) return "Tile";
+            return "Selected";
         }
 
         /** For the panel's header and tab row; null with no hero to show. */
         String state() {
-            if (placeMode) return "{\"place\":" + quote(kind(domain.entities.entity(placeOf))) + "}";
+            if (placeMode) return "{\"place\":" + quote(kind(domain.entities.entity(placeOf)))
+                    + ",\"placeName\":" + quote(deps.gameStrings.bestName(domain.entities, placeOf)) + "}";
             if (hero == null) return null;
             StringBuilder b = new StringBuilder("{\"name\":").append(quote(deps.gameStrings.bestName(domain.entities, hero)))
                     .append(",\"tab\":").append(tab).append(",\"view\":").append(view).append(",\"tabs\":[");
@@ -729,14 +798,16 @@ final class DualScreen {
         ClientCampaignDomain domain;
         Object campaignHud;
         CanvasGroup canvas;
-        Actor roster, console, consoleToggle, threats, sheet, status, place;
+        Actor roster, console, consoleToggle, threats, sheet, status, place, bar;
+        /** The HUD's own top bar, to size ours like it. */
+        Actor topBar;
         /** Per process, not per Hud: Hud objects are rebuilt every frame. */
         static boolean edgePanWasOn;
         CanvasCell consoleCell;
 
         /** Indexed by widget id. */
         Actor[] widgets() {
-            return new Actor[]{roster, console, consoleToggle, threats, sheet, status, place};
+            return new Actor[]{roster, console, consoleToggle, threats, sheet, status, place, bar};
         }
 
 
@@ -755,6 +826,7 @@ final class DualScreen {
             }
             Actor[] widgets = widgets();
             for (Actor a : widgets) if (a != null) a.setVisible(false);
+            oneColumn(roster);
             if (consoleCell != null && consoleShown() && consoleWidth > 0
                     && (consoleCell.explicitWidth != consoleWidth || consoleCell.explicitHeight != consoleHeight)) {
                 consoleCell.explicitWidth = consoleWidth;
@@ -783,6 +855,35 @@ final class DualScreen {
             if (a instanceof Image) ((Image) a).setDrawable(icon);
             else if (a instanceof Group) for (Actor c : ((Group) a).getChildren()) setIcon(c, icon);
         }
+
+        /**
+         * The HUD wraps heroes that don't fit into a second column; the panel scrolls one column instead.
+         * The layout fits minSlots cards per column, so ask for as many as there are heroes.
+         */
+        private static void oneColumn(Actor roster) {
+            try {
+                Field slots = roster.getClass().getDeclaredField("minSlots");
+                slots.setAccessible(true);
+                int cards = ((Group) roster).getChildren().size;
+                Float base = baseSlots.computeIfAbsent(roster, r -> {
+                    try {
+                        return slots.getFloat(r);
+                    } catch (IllegalAccessException e) {
+                        return 5f;
+                    }
+                });
+                float want = Math.max(base, cards);
+                if (slots.getFloat(roster) != want) {
+                    slots.setFloat(roster, want);
+                    ((com.badlogic.gdx.scenes.scene2d.utils.Layout) roster).invalidate();
+                }
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+                // a roster laid out differently: leave it to the game
+            }
+        }
+
+        /** Each roster's own slot count, before we raised it. */
+        private static final java.util.Map<Actor, Float> baseSlots = new java.util.WeakHashMap<>();
 
         /** Gives edge panning back if we turned it off; the panel is gone. */
         void restoreEdgePan() {
@@ -824,6 +925,9 @@ final class DualScreen {
                 Array<CanvasCell> cells = (Array<CanvasCell>) field(h.canvas, "cells");
                 for (CanvasCell c : cells) if (c.actor == h.console) h.consoleCell = c;
                 h.consoleToggle = consoleToggle(h.canvas, h.console);
+                Array<Actor> all = h.canvas.getChildren(); // index loop: libgdx reuses Array iterators
+                for (int i = 0; i < all.size; i++) // the top bar is the BaseBar not pinned at y 0
+                    if (all.get(i) instanceof BaseBar && all.get(i).getY() > 0) h.topBar = all.get(i);
                 h.threats = (Actor) field(field(portraits, "enemyPortraitMapper"), "verticalGroup");
                 return h;
             } catch (ReflectiveOperationException | RuntimeException e) {
@@ -840,7 +944,7 @@ final class DualScreen {
         }
     }
 
-    private static Object field(Object o, String name) throws ReflectiveOperationException {
+    static Object field(Object o, String name) throws ReflectiveOperationException {
         for (Class<?> c = o.getClass(); c != null; c = c.getSuperclass()) {
             try {
                 Field f = c.getDeclaredField(name);
