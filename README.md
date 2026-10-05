@@ -1,6 +1,6 @@
 ![Wildermyth on Android](docs/banner.png)
 
-**v0.9** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
+**v0.9.1** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
 Not affiliated with Worldwalker Games or Valve.
 
 > [!IMPORTANT]
