@@ -29,6 +29,15 @@ import com.worldwalkergames.legacy.game.mission.ui.BaseBar;
 import com.worldwalkergames.legacy.game.mission.ui.PortraitCard;
 import com.worldwalkergames.legacy.game.model.Controlled;
 import com.worldwalkergames.legacy.game.model.Individual;
+import com.worldwalkergames.legacy.render.particles.ParticleEmitter;
+import com.worldwalkergames.legacy.render.particles.ParticleStageUI;
+import com.worldwalkergames.legacy.controller.ControllerBoss;
+import com.worldwalkergames.legacy.controller.NiceController;
+import com.worldwalkergames.legacy.game.mission.model.Door;
+import com.worldwalkergames.legacy.game.mission.model.MissionMap;
+import com.worldwalkergames.legacy.game.mission.model.StaticScenery;
+import com.worldwalkergames.legacy.game.model.Controlled;
+import com.worldwalkergames.legacy.game.model.status.Status;
 import com.worldwalkergames.legacy.options.InterfaceOptions;
 import com.worldwalkergames.legacy.ui.detail.AbilitiesDetails;
 import com.worldwalkergames.legacy.ui.detail.AspectsDetails;
@@ -390,6 +399,7 @@ final class DualScreen {
                 widgets[id].getColor().a = 1;
                 if (id == ROSTER && hud.portraitBackdrops != null) draw(hud.portraitBackdrops, stage); // selection sparkle
                 draw(widgets[id], stage);
+                if ((id == ROSTER || id == THREATS) && hud.sharedParticles != null) drawHealing(hud.sharedParticles, stage);
                 widgets[id].getColor().a = alpha;
                 byte[] px = ScreenUtils.getFrameBufferPixels(r[0], r[1], r[2], r[3], true);
                 crc.reset();
@@ -807,10 +817,42 @@ final class DualScreen {
             return b.append("]}").toString();
         }
 
+        /** What the pad's battle cursor is on; the game drops its hover while a non-move action is chosen. */
+        private EID underCursor(EntitiesCollection entities) {
+            try {
+                for (NiceController c : ((ControllerBoss) field(deps, "controllers")).getMappedControllers()) {
+                    if (!c.missionCursorValid()) continue;
+                    Entity e = entityAtTile(entities, c.missionCursorX, c.missionCursorY);
+                    return e == null ? null : e.id();
+                }
+            } catch (Throwable ignored) {
+                // no pad state we know: no card
+            }
+            return null;
+        }
+
+        /** SiteCamera.getEntityAtTile, which needs a camera we can't reach. */
+        private static Entity entityAtTile(EntitiesCollection entities, int x, int y) {
+            MissionMap map = MissionMap.in(entities);
+            for (Entity e : map.getPhysicallyPresentEntities(x, y, Individual.class)) {
+                Controlled c = Controlled.any(e);
+                if (Status.of(e).isAlive() && (c == null || c.active)) return e;
+            }
+            Array<Entity> doors = map.getPhysicallyPresentEntities(x, y, Door.class);
+            if (doors.size > 0) return doors.first();
+            if (map.isWalkable(x, y)) return null;
+            for (Entity e : map.getPhysicallyPresentEntities(x, y, StaticScenery.class)) {
+                Status st = Status.any(e);
+                if (st != null && !st.hasAspect("nonInteractive")) return e;
+            }
+            return null;
+        }
+
         /** Follows the selection; rebuilds the open tab when the game says state changed (at most ~3/s). */
         void update(Game d) {
             UISelectionState sel = UISelectionState.in(d.entities);
             EID h = game.campaign == null ? sel.selectionHover() : null;
+            if (game.campaign == null && h == null) h = underCursor(d.entities);
             Entity he = h == null ? null : d.entities.entity(h);
             hoverShown |= he != null; // keeps the last card once the cursor moves off
             if (he != null && (!h.equals(hoverOf) || dirty)) {
@@ -888,6 +930,8 @@ final class DualScreen {
         Object gameHud;
         /** The particle layer used only for portrait backdrops (CampaignHud and MissionHud both have one). */
         Actor portraitBackdrops;
+        /** The HUD's top particle layer, which portrait healing effects share with the ability bar. */
+        ParticleStageUI sharedParticles;
         /** The UI root's popups: a battle's dependencies are a copy with their own, often unused, manager. */
         PopUpManager rootPopups;
 
@@ -926,6 +970,15 @@ final class DualScreen {
             for (Actor a : widgets) if (a != null) a.setVisible(false);
             // The portraits' backdrops (sparkles) live on their own particle layer: hide it too.
             if (portraitBackdrops != null) portraitBackdrops.setVisible(false);
+            // Healing sparkles share the ability bar's layer: lift just those out for this frame's draw (they'd
+            // float where the portraits were); the panel draws them on its portraits.
+            if (sharedParticles != null) {
+                restoreHealing(sharedParticles);
+                Array<ParticleStageUI.EmitterData> all = sharedParticles.particleEmitters;
+                for (int i = all.size - 1; i >= 0; i--) if (portraitHealing(all.get(i))) healing.add(all.removeIndex(i));
+                ParticleStageUI layer = sharedParticles;
+                Gdx.app.postRunnable(() -> restoreHealing(layer)); // back before the next act, so they keep simulating
+            }
             unmaskBattle();
             oneColumn(roster);
             if (consoleCell != null && consoleShown() && consoleWidth > 0
@@ -1067,6 +1120,7 @@ final class DualScreen {
                     if (all.get(i) instanceof BaseBar && all.get(i).getY() > 0) h.topBar = all.get(i);
                 h.threats = (Actor) field(field(portraits, "enemyPortraitMapper"), "verticalGroup");
                 h.portraitBackdrops = (Actor) field(h.gameHud, "bottomParticleStageUI");
+                h.sharedParticles = (ParticleStageUI) field(h.gameHud, "topParticleStageUI");
                 if (h.game.campaign == null) { // a battle's Undo and Retreat buttons go to the panel's bar
                     h.undo = (Actor) field(h.gameHud, "undoButton");
                     // The HUD forgets its retreat button after the first frame; it sits right after Undo.
@@ -1086,6 +1140,37 @@ final class DualScreen {
             for (int i = children.indexOf(console, true) + 1; i > 0 && i < children.size; i++)
                 if (children.get(i).getClass().getSimpleName().equals("NiceButton")) return children.get(i);
             return null;
+        }
+    }
+
+    /** Portrait healing sparkles lifted off the HUD's shared particle layer for the current frame. */
+    private static final Array<ParticleStageUI.EmitterData> healing = new Array<>();
+
+    private static void restoreHealing(ParticleStageUI layer) {
+        if (healing.size == 0) return;
+        layer.particleEmitters.addAll(healing);
+        healing.clear();
+    }
+
+    /** Draws only the portrait healing sparkles, wherever they are this moment (lifted or not). */
+    private static void drawHealing(ParticleStageUI layer, Stage stage) {
+        Array<ParticleStageUI.EmitterData> all = layer.particleEmitters, only = new Array<>(healing);
+        for (ParticleStageUI.EmitterData e : all) if (portraitHealing(e)) only.add(e);
+        if (only.size == 0) return;
+        layer.particleEmitters = only;
+        try {
+            draw(layer, stage);
+        } finally {
+            layer.particleEmitters = all;
+        }
+    }
+
+    private static boolean portraitHealing(Object emitterData) {
+        try {
+            String script = ((ParticleEmitter) field(emitterData, "particleEmitter")).script;
+            return script != null && script.startsWith("heroPortraitHealing");
+        } catch (ReflectiveOperationException e) {
+            return false;
         }
     }
 

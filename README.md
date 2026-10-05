@@ -1,6 +1,6 @@
 ![Wildermyth on Android](docs/banner.png)
 
-**v0.7** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
+**v0.8** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
 Not affiliated with Worldwalker Games or Valve.
 
 > [!IMPORTANT]
@@ -22,7 +22,8 @@ Not affiliated with Worldwalker Games or Valve.
 **Questions or bugs?** [Open an issue](https://github.com/hung-eggie-do-covergo/wildermyth-android/issues).
 
 [Features](#features) · [Pictures](#pictures) · [Dual-Screen](#dual-screen) · [How it works](#how-it-works) ·
-[Status and limits](#status-and-limits) · [Building](#building) · [Credits](#credits) · [License](#license)
+[Status and limits](#status-and-limits) · [Building](#building) · [Credits](#credits) · [License](#license) ·
+[News](news/)
 
 ## TL;DR
 
@@ -49,9 +50,9 @@ yet, give it a try: it's on [Steam](https://store.steampowered.com/app/763890/Wi
 
 ## Dual-Screen
 
-On a dual-screen handheld like the Thor, turn on "Dual screen" on the setup screen (top right). The map
-uses the whole top screen, and the hero panels move to the bottom screen. The controller still controls the
-game; the bottom screen is for touch.
+On a dual-screen handheld like the Thor, turn on "Dual screen" in the launcher's Settings. The map uses the
+whole top screen, and the hero panels move to the bottom screen. The controller still controls the game; the
+bottom screen is for touch.
 
 | Hero sheet | Hero card (tap the name) | Selected tile |
 |---|---|---|
@@ -71,6 +72,12 @@ In battle, the bottom screen shows the card for whatever the cursor points at, o
 |---|---|---|
 | ![The card for what the cursor points at, full width on the bottom screen](docs/ds-battle-info.jpeg) | ![The hero sheet during a battle](docs/ds-battle-sheet.jpeg) | ![The foes' column shown over the card](docs/ds-battle-threats.jpeg) |
 
+The launcher's buttons also move to the bottom screen. Tap them, or use the D-pad and A.
+
+| Launcher | Settings |
+|---|---|
+| ![The launcher's message on top, its buttons on the bottom screen](docs/ds-launcher.jpeg) | ![Settings: version, Dual screen, Updates and Back](docs/ds-settings.jpeg) |
+
 ## Features
 
 - **Install the game from the app.** Pick your own game files, or sign in to Steam and download the game
@@ -83,7 +90,8 @@ In battle, the bottom screen shows the card for whatever the cursor points at, o
 - **Controller and sound** work out of the box.
 - **Dual screen** on handhelds with two screens. See [Dual-Screen](#dual-screen).
 - **Touch and controller** both work. Tapping doesn't switch the game to keyboard prompts.
-- **Updates.** The app offers new releases when you open it. Turn off with "Updates" on the setup screen.
+- **Updates.** The app checks for new releases when you open it; Settings shows the version and an update
+  button. Turn off with "Updates" in Settings.
 
 Tested on the AYN Thor (Snapdragon 8 Gen 2, Android 13). Other Android handhelds with a Snapdragon chip may
 work, but haven't been tested.
