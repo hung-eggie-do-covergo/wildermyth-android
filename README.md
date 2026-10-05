@@ -1,6 +1,6 @@
 ![Wildermyth on Android](docs/banner.png)
 
-**v0.8** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
+**v0.9** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
 Not affiliated with Worldwalker Games or Valve.
 
 > [!IMPORTANT]
@@ -92,6 +92,8 @@ The launcher's buttons also move to the bottom screen. Tap them, or use the D-pa
 - **Touch and controller** both work. Tapping doesn't switch the game to keyboard prompts.
 - **Updates.** The app checks for new releases when you open it; Settings shows the version and an update
   button. Turn off with "Updates" in Settings.
+- **Auto launch.** The app stops at "Ready to play." so you can reach Settings. Turn on "Auto launch" in
+  Settings to go straight into the game.
 
 Tested on the AYN Thor (Snapdragon 8 Gen 2, Android 13). Other Android handhelds with a Snapdragon chip may
 work, but haven't been tested.
