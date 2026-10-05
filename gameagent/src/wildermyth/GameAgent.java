@@ -17,6 +17,7 @@ public final class GameAgent {
     public static void premain(String args) {
         ownedDlc();
         threadDumpOnRequest();
+        exitWhenDone();
         try {
             ControllerMode.start();
         } catch (Throwable t) {
@@ -74,6 +75,34 @@ public final class GameAgent {
                 }
             }
         }, "wm-thread-dump");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /**
+     * "Quit to desktop" ends the game's main thread but not the VM: a native thread stays attached to it
+     * and the VM waits on it for ever, frozen on the last frame. Once the game has shut down, exit.
+     */
+    private static void exitWhenDone() {
+        Thread t = new Thread(() -> {
+            try {
+                while (com.badlogic.gdx.Gdx.app == null) Thread.sleep(500);
+                Thread[] main = new Thread[1];
+                com.badlogic.gdx.Gdx.app.addLifecycleListener(new com.badlogic.gdx.LifecycleListener() {
+                    @Override public void pause() {}
+                    @Override public void resume() {}
+                    @Override public void dispose() {
+                        main[0] = Thread.currentThread(); // the render loop's thread, which is main
+                    }
+                });
+                while (main[0] == null) Thread.sleep(500);
+                main[0].join();
+                System.out.println("GameAgent: game closed, exiting");
+                System.exit(0);
+            } catch (Throwable ignored) {
+                // no exit then; same as before
+            }
+        }, "wm-exit");
         t.setDaemon(true);
         t.start();
     }
