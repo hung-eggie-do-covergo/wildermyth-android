@@ -1,0 +1,40 @@
+name: Build
+
+# The app (amethyst/) needs wmcloud/ from this repo, so it is built here, not in the submodule.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  debug-apk:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # The Java 8 runtime the game runs on; not kept in git.
+      - uses: dawidd6/action-download-artifact@v9
+        with:
+          workflow: build.yml
+          path: amethyst/app_pojavlauncher/src/main/assets/components/jre
+          workflow_conclusion: completed
+          repo: AngelAuraMC/angelauramc-openjdk-build
+          branch: buildjre8
+          name: jre8-pojav
+
+      - name: Build debug APK
+        working-directory: amethyst
+        run: ./gradlew :app_pojavlauncher:assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: amethyst/app_pojavlauncher/build/outputs/apk/debug/*.apk
