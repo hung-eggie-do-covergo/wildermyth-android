@@ -18,7 +18,10 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          # 8 for MioLibPatcher's toolchain, 17 (the last) to run Gradle
+          java-version: |
+            8
+            17
 
       # The Java 8 runtime the game runs on; not kept in git. Upstream's artifact expires, so a copy lives
       # on the app repo's releases.
