@@ -20,15 +20,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # The Java 8 runtime the game runs on; not kept in git.
-      - uses: dawidd6/action-download-artifact@v9
-        with:
-          workflow: build.yml
-          path: amethyst/app_pojavlauncher/src/main/assets/components/jre
-          workflow_conclusion: completed
-          repo: AngelAuraMC/angelauramc-openjdk-build
-          branch: buildjre8
-          name: jre8-pojav
+      # The Java 8 runtime the game runs on; not kept in git. Upstream's artifact expires, so a copy lives
+      # on the app repo's releases.
+      - name: Get Java 8 runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download jre8-f03a5a0 -R hung-eggie-do-covergo/amethyst-wildermyth \
+            -D amethyst/app_pojavlauncher/src/main/assets/components/jre
 
       - name: Build debug APK
         working-directory: amethyst
