@@ -34,7 +34,7 @@ jobs:
 
       - name: Build debug APK
         working-directory: amethyst
-        run: ./gradlew :app_pojavlauncher:assembleDebug
+        run: ./gradlew :app_pojavlauncher:assembleDebug -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64
 
       - uses: actions/upload-artifact@v4
         with:
