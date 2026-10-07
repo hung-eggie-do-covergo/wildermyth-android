@@ -56,9 +56,9 @@ bottom screen is for touch.
 
 | Hero sheet | Hero card (tap the name) | Selected tile |
 |---|---|---|
-| ![The selected hero's abilities on the bottom screen, the map on top](docs/ds-sheet.jpeg) | ![The hero's card dropping down from their name](docs/ds-herocard.jpeg) | ![A selected tile's card: its site and who occupies it](docs/ds-tile.jpeg) |
+| ![The selected hero's abilities on the bottom screen, the map on top](docs/ds-sheet.webp) | ![The hero's card dropping down from their name](docs/ds-herocard.webp) | ![A selected tile's card: its site and who occupies it](docs/ds-tile.webp) |
 | **Overview map** | **Threats** | **Message log** |
-| ![The campaign map: terrain, fog, threat coins, your parties and the camera frame](docs/ds-map.jpeg) | ![The threats column shown over the sheet](docs/ds-threats.jpeg) | ![The game's message log over the bottom screen](docs/ds-log.jpeg) |
+| ![The campaign map: terrain, fog, threat coins, your parties and the camera frame](docs/ds-map.webp) | ![The threats column shown over the sheet](docs/ds-threats.webp) | ![The game's message log over the bottom screen](docs/ds-log.webp) |
 
 - Hero sheet: abilities, gear, stats, combat, relationships and aspects. Tap an entry for details.
 - Overview map: terrain, fog of war, threats and your heroes. Pinch to zoom, drag to pan, tap a tile to
@@ -70,13 +70,13 @@ In battle, the bottom screen shows the card for whatever the cursor points at, o
 
 | Info | Sheet | Threats |
 |---|---|---|
-| ![The card for what the cursor points at, full width on the bottom screen](docs/ds-battle-info.jpeg) | ![The hero sheet during a battle](docs/ds-battle-sheet.jpeg) | ![The foes' column shown over the card](docs/ds-battle-threats.jpeg) |
+| ![The card for what the cursor points at, full width on the bottom screen](docs/ds-battle-info.webp) | ![The hero sheet during a battle](docs/ds-battle-sheet.webp) | ![The foes' column shown over the card](docs/ds-battle-threats.webp) |
 
 The launcher's buttons also move to the bottom screen. Tap them, or use the D-pad and A.
 
 | Launcher | Settings |
 |---|---|
-| ![The launcher's message on top, its buttons on the bottom screen](docs/ds-launcher.jpeg) | ![Settings: version, Dual screen, Updates and Back](docs/ds-settings.jpeg) |
+| ![The launcher's message on top, its buttons on the bottom screen](docs/ds-launcher.webp) | ![Settings: version, Dual screen, Updates and Back](docs/ds-settings.webp) |
 
 ## Features
 
