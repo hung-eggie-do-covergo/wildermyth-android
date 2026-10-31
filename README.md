@@ -1,6 +1,6 @@
 ![Wildermyth on Android](docs/banner.png)
 
-**v0.9.4** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
+**v0.9.6** · Unofficial Android launcher for [Wildermyth](https://wildermyth.com) by Worldwalker Games.
 Not affiliated with Worldwalker Games or Valve.
 
 > [!IMPORTANT]
@@ -89,7 +89,7 @@ The launcher's buttons also move to the bottom screen. Tap them, or use the D-pa
 - **DLC** you own on Steam is unlocked.
 - **Controller and sound** work out of the box.
 - **Dual screen** on handhelds with two screens. See [Dual-Screen](#dual-screen).
-- **Touch and controller** both work. Tapping doesn't switch the game to keyboard prompts.
+- **Touch and controller** both work. Tapping doesn't switch the game to keyboard prompts. On touch, two fingers pan, pinch zooms and a long press right-clicks.
 - **Updates.** The app checks for new releases when you open it; Settings shows the version and an update
   button. Turn off with "Updates" in Settings.
 - **Auto launch.** The app stops at "Ready to play." so you can reach Settings. Turn on "Auto launch" in
